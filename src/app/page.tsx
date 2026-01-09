@@ -537,7 +537,7 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ticketId: Number(cleanInput) })
         });
-        let ticketOutput: AgentInputPayload | null = null;
+        let ticketFinalEvent: AgentInputPayload | null = null;
         await consumeSseResponse(ticketResponse, (eventType, data) => {
           if (eventType === 'status') {
             const stage = String(data?.stage || '');
@@ -549,7 +549,7 @@ export default function Home() {
             return;
           }
           if (eventType === 'done') {
-            ticketOutput = (data?.output as { metadata?: unknown; conversation?: unknown }) || null;
+            ticketFinalEvent = (data?.output as AgentInputPayload) || null;
             return;
           }
           if (eventType === 'error') {
@@ -560,6 +560,7 @@ export default function Home() {
         if (!ticketResponse.ok) {
           throw new Error(`Ticket fetch failed with ${ticketResponse.status}`);
         }
+        const ticketOutput = ticketFinalEvent as AgentInputPayload | null;
         const ticketMetadata = ticketOutput?.metadata;
         if (ticketMetadata && typeof ticketMetadata === 'object') {
           setSteps((prev) => ({
@@ -585,7 +586,7 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: cleanInput })
         });
-        let analysisOutput: AgentInputPayload | null = null;
+        let analysisFinalEvent: AgentInputPayload | null = null;
         await consumeSseResponse(analysisResponse, (eventType, data) => {
           if (eventType === 'status') {
             const stage = String(data?.stage || '');
@@ -597,7 +598,7 @@ export default function Home() {
             return;
           }
           if (eventType === 'done') {
-            analysisOutput = (data?.output as { metadata?: unknown; conversation?: unknown }) || null;
+            analysisFinalEvent = (data?.output as AgentInputPayload) || null;
             return;
           }
           if (eventType === 'error') {
@@ -608,6 +609,7 @@ export default function Home() {
         if (!analysisResponse.ok) {
           throw new Error(`Query analysis failed with ${analysisResponse.status}`);
         }
+        const analysisOutput = analysisFinalEvent as AgentInputPayload | null;
         const analysisMetadata = analysisOutput?.metadata;
         if (analysisMetadata && typeof analysisMetadata === 'object') {
           setSteps((prev) => ({
@@ -863,8 +865,9 @@ export default function Home() {
           if (outputText) {
             setOutput((prev) => (prev ? prev : outputText));
           }
+          const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
           const serverMs =
-            typeof data?.meta?.server_ms === 'number' ? Math.round(data.meta.server_ms) : undefined;
+            typeof meta?.server_ms === 'number' ? Math.round(meta.server_ms) : undefined;
           const finalRoundTripMs = Math.round(performance.now() - startedAt);
           setTiming({ round_trip_ms: finalRoundTripMs, server_ms: serverMs });
           setLoading(false);
@@ -875,8 +878,9 @@ export default function Home() {
         if (eventType === 'error') {
           const message = String(data?.message || 'Unknown error');
           setError(message);
+          const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
           const serverMs =
-            typeof data?.meta?.server_ms === 'number' ? Math.round(data.meta.server_ms) : undefined;
+            typeof meta?.server_ms === 'number' ? Math.round(meta.server_ms) : undefined;
           const finalRoundTripMs = Math.round(performance.now() - startedAt);
           setTiming({ round_trip_ms: finalRoundTripMs, server_ms: serverMs });
           setLoading(false);
@@ -1102,7 +1106,7 @@ export default function Home() {
                       ? statusSteps
                       : [{ id: 'start', label: 'Starting agent run', forceActive: true }]
                     ).map((step, index) => {
-                      const isActive = step.forceActive ? true : index === currentStatusIndex && !statusDone;
+                      const isActive = 'forceActive' in step ? true : index === currentStatusIndex && !statusDone;
                       const isComplete = statusDone || index < currentStatusIndex;
                       const isThinkingStep = /thinking/i.test(step.label) || /thinking/i.test(step.id);
                       return (
