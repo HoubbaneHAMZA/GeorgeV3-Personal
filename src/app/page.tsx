@@ -560,8 +560,7 @@ export default function Home() {
         if (!ticketResponse.ok) {
           throw new Error(`Ticket fetch failed with ${ticketResponse.status}`);
         }
-        agentInputPayload = ticketOutput;
-        const ticketMetadata = agentInputPayload?.metadata;
+        const ticketMetadata = ticketOutput?.metadata;
         if (ticketMetadata && typeof ticketMetadata === 'object') {
           setSteps((prev) => ({
             ...prev,
@@ -571,6 +570,7 @@ export default function Home() {
             }
           }));
         }
+        agentInputPayload = ticketOutput;
         setStatusSteps((prev) => {
           const exists = prev.some((step) => step.id === 'start');
           if (exists) return prev;
@@ -608,8 +608,7 @@ export default function Home() {
         if (!analysisResponse.ok) {
           throw new Error(`Query analysis failed with ${analysisResponse.status}`);
         }
-        agentInputPayload = analysisOutput;
-        const analysisMetadata = agentInputPayload?.metadata;
+        const analysisMetadata = analysisOutput?.metadata;
         if (analysisMetadata && typeof analysisMetadata === 'object') {
           setSteps((prev) => ({
             ...prev,
@@ -619,6 +618,7 @@ export default function Home() {
             }
           }));
         }
+        agentInputPayload = analysisOutput;
         setStatusSteps((prev) => {
           const exists = prev.some((step) => step.id === 'start');
           if (exists) return prev;
