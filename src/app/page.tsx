@@ -26,6 +26,11 @@ type TimingInfo = {
   server_ms?: number;
 };
 
+type AgentInputPayload = {
+  metadata?: unknown;
+  conversation?: unknown;
+};
+
 // Format filter key to readable label
 function formatFilterKey(key: string): string {
   return key
@@ -520,7 +525,7 @@ export default function Home() {
     // Auto-detect ticket ID if input starts with #
     const detectedIsZendeskTicket = input.trim().startsWith('#');
     const cleanInput = detectedIsZendeskTicket ? input.trim().replace(/^#/, '') : input;
-    let agentInputPayload: { metadata?: unknown; conversation?: unknown } | null = null;
+    let agentInputPayload: AgentInputPayload | null = null;
 
     const startedAt = performance.now();
     try {
@@ -532,7 +537,7 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ticketId: Number(cleanInput) })
         });
-        let ticketOutput: { metadata?: unknown; conversation?: unknown } | null = null;
+        let ticketOutput: AgentInputPayload | null = null;
         await consumeSseResponse(ticketResponse, (eventType, data) => {
           if (eventType === 'status') {
             const stage = String(data?.stage || '');
@@ -556,11 +561,12 @@ export default function Home() {
           throw new Error(`Ticket fetch failed with ${ticketResponse.status}`);
         }
         agentInputPayload = ticketOutput;
-        if (agentInputPayload?.metadata && typeof agentInputPayload.metadata === 'object') {
+        const ticketMetadata = agentInputPayload?.metadata;
+        if (ticketMetadata && typeof ticketMetadata === 'object') {
           setSteps((prev) => ({
             ...prev,
             queryAnalysis: {
-              metadata: agentInputPayload.metadata as Record<string, unknown>,
+              metadata: ticketMetadata as Record<string, unknown>,
               isZendesk: true
             }
           }));
@@ -579,7 +585,7 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: cleanInput })
         });
-        let analysisOutput: { metadata?: unknown; conversation?: unknown } | null = null;
+        let analysisOutput: AgentInputPayload | null = null;
         await consumeSseResponse(analysisResponse, (eventType, data) => {
           if (eventType === 'status') {
             const stage = String(data?.stage || '');
@@ -603,11 +609,12 @@ export default function Home() {
           throw new Error(`Query analysis failed with ${analysisResponse.status}`);
         }
         agentInputPayload = analysisOutput;
-        if (agentInputPayload?.metadata && typeof agentInputPayload.metadata === 'object') {
+        const analysisMetadata = agentInputPayload?.metadata;
+        if (analysisMetadata && typeof analysisMetadata === 'object') {
           setSteps((prev) => ({
             ...prev,
             queryAnalysis: {
-              metadata: agentInputPayload.metadata as Record<string, unknown>,
+              metadata: analysisMetadata as Record<string, unknown>,
               isZendesk: false
             }
           }));
