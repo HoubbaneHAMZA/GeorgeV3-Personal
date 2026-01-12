@@ -189,7 +189,7 @@ export default function DocsPage() {
             </div>
             <div className="george-docs-model">
               <p>Attachment Vision</p>
-              <code>gpt-4o-mini</code>
+              <code>gpt-5.1</code>
             </div>
           </div>
         </section>
