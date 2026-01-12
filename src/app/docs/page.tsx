@@ -2,39 +2,33 @@
 
 const dataSources = [
   {
-    name: 'Zendesk Tickets',
-    description: 'Historical support conversations transformed into Q&A pairs',
-    format: 'JSON → Markdown + YAML',
-    details: 'Clustered by similarity to reduce redundancy and improve retrieval'
-  },
-  {
-    name: 'Zendesk FAQ Articles',
-    description: 'Official knowledge base articles',
+    name: 'QAI (FAQ + Solved Tickets)',
+    description: 'Blended FAQ content and resolved Zendesk tickets for common questions and outcomes',
     format: 'HTML → Markdown + YAML',
-    details: 'Duplicated per applicable version for precise filtering'
+    details: 'Combines official FAQ phrasing with real-world solved cases'
   },
   {
-    name: 'Zendesk Macros',
+    name: 'Macros',
     description: 'Pre-approved response templates',
     format: 'JSON → Markdown + YAML',
-    details: 'Multi-language support (EN/FR), separated per OS when applicable'
+    details: 'Standardized phrasing for consistent support responses'
   },
   {
     name: 'User Guides',
     description: 'Complete product documentation',
-    format: 'PDF → Markdown (Docling + GPU)',
-    details: 'Expanded into separate Windows/macOS files for OS-specific results'
+    format: 'PDF → Markdown',
+    details: 'Primary how-to and workflow reference for technical questions'
   },
   {
     name: 'Release Notes',
     description: 'Version-specific changes and known issues',
-    format: 'PDF → Markdown (Docling)',
+    format: 'PDF → Markdown',
     details: 'First source checked for technical issues and recent fixes'
   },
   {
     name: 'Website Pages',
     description: 'Public product and marketing content',
-    format: 'HTML → Markdown (Trafilatura)',
+    format: 'HTML → Markdown',
     details: 'Primary source for pre-purchase and product comparison queries'
   },
   {
@@ -46,22 +40,20 @@ const dataSources = [
 ];
 
 const vectorStores = [
-  { name: 'dxo_kb_faq', source: 'Zendesk FAQ Articles' },
-  { name: 'dxo_kb_macro', source: 'Zendesk Macros' },
-  { name: 'dxo_kb_release_notes', source: 'Release Notes' },
-  { name: 'dxo_kb_user_guides', source: 'User Guides' },
-  { name: 'dxo_kb_tickets', source: 'Zendesk Tickets' },
-  { name: 'dxo_kb_website', source: 'Website Pages' },
-  { name: 'dxo_kb_confluence', source: 'Confluence Pages' }
+  { name: 'WEBSITE', source: 'Website Pages' },
+  { name: 'MACROS', source: 'Macros' },
+  { name: 'QAI', source: 'QAI (FAQ + Solved Tickets)' },
+  { name: 'RELEASE_NOTES', source: 'Release Notes' },
+  { name: 'USER_GUIDES', source: 'User Guides' },
+  { name: 'CONFLUENCE', source: 'Confluence Pages' }
 ];
 
 const filters = [
-  { name: 'software', values: 'photolab, pureraw, filmpack, viewpoint, nikcollection' },
-  { name: 'os', values: 'windows, macos, any' },
-  { name: 'software_version', values: 'Version string (e.g., 7.0, 8.1)' },
-  { name: 'language', values: 'en, fr, de, any' },
-  { name: 'category', values: 'AI-assigned topic category' },
-  { name: 'sub_category', values: 'AI-assigned topic subcategory' }
+  { name: 'software', values: 'photolab, pureraw, filmpack, viewpoint, nik collection' },
+  { name: 'software_version', values: 'Major versions only (e.g., 7, 8)' },
+  { name: 'os', values: 'windows, macos' },
+  { name: 'os_version', values: 'Version string (e.g., 10, 14.0)' },
+  { name: 'language', values: 'en, fr, de' }
 ];
 
 export default function DocsPage() {
@@ -118,6 +110,13 @@ export default function DocsPage() {
                 content is prioritized (product positioning).
               </p>
             </div>
+            <div className="george-docs-card">
+              <h4>4. Compatibility + Attachments</h4>
+              <p>
+                Camera and lens compatibility questions always use the SQL agent. If the user includes screenshots,
+                images are analyzed in parallel with a vision model and their descriptions are appended to the query.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -153,7 +152,7 @@ export default function DocsPage() {
           </div>
           <p className="george-docs-note">
             Each vector store is searched with metadata filters (software, OS, version, language, category) for precise
-            retrieval. Results are summarized using GPT-4o-mini before being passed to the main agent.
+            retrieval. The tool returns top-3 excerpts (no separate summarizer model).
           </p>
         </section>
 
@@ -182,10 +181,14 @@ export default function DocsPage() {
             </div>
             <div className="george-docs-model">
               <p>SQL Agent</p>
+              <code>gpt-5.2</code>
+            </div>
+            <div className="george-docs-model">
+              <p>Metadata Extractor</p>
               <code>gpt-4.1</code>
             </div>
             <div className="george-docs-model">
-              <p>Summarizer</p>
+              <p>Attachment Vision</p>
               <code>gpt-4o-mini</code>
             </div>
           </div>
