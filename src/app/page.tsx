@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase/client';
 
 function CollapsibleStep({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -260,6 +261,7 @@ async function consumeSseResponse(
 
 export default function Home() {
   const pathname = usePathname();
+  const router = useRouter();
   const agentEndpoint = '/api/agent';
   const queryAnalysisEndpoint = '/api/query-analysis';
   const ticketFetchEndpoint = '/api/ticket-fetch';
@@ -529,12 +531,21 @@ export default function Home() {
 
     const startedAt = performance.now();
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        router.replace('/login');
+        return;
+      }
       if (detectedIsZendeskTicket) {
         setStatusSteps([{ id: 'fetch_ticket', label: 'Fetching Zendesk ticket' }]);
         setActiveStatusId('fetch_ticket');
         const ticketResponse = await fetch(ticketFetchEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          },
           body: JSON.stringify({ ticketId: Number(cleanInput) })
         });
         let ticketFinalEvent: AgentInputPayload | null = null;
@@ -557,6 +568,10 @@ export default function Home() {
             throw new Error(message);
           }
         });
+        if (ticketResponse.status === 401) {
+          router.replace('/login');
+          return;
+        }
         if (!ticketResponse.ok) {
           throw new Error(`Ticket fetch failed with ${ticketResponse.status}`);
         }
@@ -583,7 +598,10 @@ export default function Home() {
         setActiveStatusId('query_analysis');
         const analysisResponse = await fetch(queryAnalysisEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          },
           body: JSON.stringify({ query: cleanInput })
         });
         let analysisFinalEvent: AgentInputPayload | null = null;
@@ -606,6 +624,10 @@ export default function Home() {
             throw new Error(message);
           }
         });
+        if (analysisResponse.status === 401) {
+          router.replace('/login');
+          return;
+        }
         if (!analysisResponse.ok) {
           throw new Error(`Query analysis failed with ${analysisResponse.status}`);
         }
@@ -633,7 +655,8 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream'
+          'Accept': 'text/event-stream',
+          Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           input: cleanInput,
@@ -643,10 +666,15 @@ export default function Home() {
       });
       const roundTripMs = Math.round(performance.now() - startedAt);
 
+      if (response.status === 401) {
+        router.replace('/login');
+        return;
+      }
       if (!response.body) {
         const data = await response.json().catch(() => ({}));
+        const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
         const serverMs =
-          typeof data?.meta?.server_ms === 'number' ? Math.round(data.meta.server_ms) : undefined;
+          typeof meta?.server_ms === 'number' ? Math.round(meta.server_ms) : undefined;
         setTiming({ round_trip_ms: roundTripMs, server_ms: serverMs });
         throw new Error(data.error || `Request failed with ${response.status}`);
       }

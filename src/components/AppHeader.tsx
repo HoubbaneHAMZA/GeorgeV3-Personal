@@ -7,6 +7,15 @@ export default function AppHeader() {
   const router = useRouter();
   const pathname = usePathname();
 
+  const clearLocalSupabaseSession = () => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) return;
+    const ref = new URL(supabaseUrl).hostname.split('.')[0];
+    const baseKey = `sb-${ref}-auth-token`;
+    localStorage.removeItem(baseKey);
+    localStorage.removeItem(`${baseKey}-code-verifier`);
+  };
+
   return (
     <header className="george-header">
       <div className="george-header-left">
@@ -25,7 +34,11 @@ export default function AppHeader() {
           type="button"
           className="george-signout"
           onClick={async () => {
-            await supabase.auth.signOut();
+            const { error } = await supabase.auth.signOut({ scope: 'local' });
+            if (error) {
+              console.error('Sign out failed:', error.message);
+            }
+            clearLocalSupabaseSession();
             window.location.href = '/login';
           }}
           aria-label="Sign out"

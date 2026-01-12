@@ -12,14 +12,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getUser().then(({ data, error }) => {
       if (!mounted) return;
-      const hasSession = Boolean(data.session);
-      if (!hasSession && pathname !== '/login') {
+      const hasUser = Boolean(data.user) && !error;
+      if (!hasUser && pathname !== '/login') {
         router.replace('/login');
         return;
       }
-      if (hasSession && pathname === '/login') {
+      if (hasUser && pathname === '/login') {
         router.replace('/');
         return;
       }
@@ -27,6 +27,21 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     });
     return () => {
       mounted = false;
+    };
+  }, [pathname, router]);
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session && pathname !== '/login') {
+        router.replace('/login');
+        return;
+      }
+      if (session && pathname === '/login') {
+        router.replace('/');
+      }
+    });
+    return () => {
+      data.subscription.unsubscribe();
     };
   }, [pathname, router]);
 
