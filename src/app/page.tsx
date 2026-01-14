@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
@@ -267,6 +268,26 @@ export default function Home() {
   const ticketFetchEndpoint = '/api/ticket-fetch';
   const [input, setInput] = useState('');
   const [ticketError, setTicketError] = useState('');
+  const [userEmailDraft, setUserEmailDraft] = useState('');
+  const [userEmailTag, setUserEmailTag] = useState('');
+  const [softwareDraft, setSoftwareDraft] = useState('');
+  const [softwareTag, setSoftwareTag] = useState('');
+  const [softwareVersionDraft, setSoftwareVersionDraft] = useState('');
+  const [softwareVersionTag, setSoftwareVersionTag] = useState('');
+  const [osDraft, setOsDraft] = useState('');
+  const [osTag, setOsTag] = useState('');
+  const [osVersionDraft, setOsVersionDraft] = useState('');
+  const [osVersionTag, setOsVersionTag] = useState('');
+  const [openDropdown, setOpenDropdown] = useState<'software' | 'softwareVersion' | 'os' | null>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [dropdownReady, setDropdownReady] = useState(false);
+  const [dropdownWidth, setDropdownWidth] = useState<number | null>(null);
+  const [inlineError, setInlineError] = useState('');
+  const softwareFieldRef = useRef<HTMLDivElement | null>(null);
+  const softwareVersionFieldRef = useRef<HTMLDivElement | null>(null);
+  const osFieldRef = useRef<HTMLDivElement | null>(null);
+  const dropdownPortalRef = useRef<HTMLDivElement | null>(null);
+  const inlineErrorTimeout = useRef<number | null>(null);
   
   // Extract ticket number if input starts with # followed by numbers only
   const ticketMatch = input.match(/^(#\d+)(.*)$/);
@@ -326,17 +347,139 @@ export default function Home() {
       return url;
     }
   };
+  const isTicketMode = Boolean(ticketTag);
   const showInput = !hasResponse;
   const showGeneratedBy = statusDone;
-  const toolTags = Array.from(
-    new Set(
-      steps.agentThinking?.queries.map((q) =>
-        q.tool.startsWith('vector_store_search_')
-          ? q.tool.replace('vector_store_search_', '')
-          : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-      ) || []
+  const toolTags = useMemo(() => (
+    Array.from(
+      new Set(
+        steps.agentThinking?.queries.map((q) =>
+          q.tool.startsWith('vector_store_search_')
+            ? q.tool.replace('vector_store_search_', '')
+            : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+        ) || []
+      )
     )
-  );
+  ), [steps.agentThinking?.queries]);
+  const softwareOptions = useMemo(() => ([
+    'filmpack',
+    'nikcollection',
+    'photolab',
+    'pureraw',
+    'viewpoint'
+  ]), []);
+  const softwareVersionsMap = useMemo(() => ({
+    filmpack: ['8', '7', '6', '5', '4'],
+    nikcollection: ['8', '7', '6', '5', '4', '3', '2'],
+    photolab: ['9', '8', '7', '6', '5', '4', '3', '2', '1'],
+    pureraw: ['5', '4', '3', '2', '1'],
+    viewpoint: ['5', '4', '3', '2', '1']
+  }), []);
+  const osOptions = useMemo(() => (['macos', 'windows']), []);
+  const softwareVersionOptions = useMemo(() => {
+    const key = softwareTag.toLowerCase();
+    return softwareVersionsMap[key as keyof typeof softwareVersionsMap] || [];
+  }, [softwareTag, softwareVersionsMap]);
+  const filteredSoftwareOptions = useMemo(() => {
+    const query = softwareDraft.trim().toLowerCase();
+    if (!query) return softwareOptions;
+    return softwareOptions.filter((option) => option.includes(query));
+  }, [softwareDraft, softwareOptions]);
+  const filteredSoftwareVersionOptions = useMemo(() => {
+    const query = softwareVersionDraft.trim();
+    if (!query) return softwareVersionOptions;
+    return softwareVersionOptions.filter((option) => option.includes(query));
+  }, [softwareVersionDraft, softwareVersionOptions]);
+  const filteredOsOptions = useMemo(() => {
+    const query = osDraft.trim().toLowerCase();
+    if (!query) return osOptions;
+    return osOptions.filter((option) => option.includes(query));
+  }, [osDraft, osOptions]);
+
+  useEffect(() => {
+    if (!softwareTag) {
+      setSoftwareVersionTag('');
+      setSoftwareVersionDraft('');
+      return;
+    }
+    if (softwareVersionTag && !softwareVersionOptions.includes(softwareVersionTag)) {
+      setSoftwareVersionTag('');
+    }
+  }, [softwareTag, softwareVersionOptions, softwareVersionTag]);
+
+  useEffect(() => {
+    if (!openDropdown) return;
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const softwareEl = document.getElementById('george-software-field');
+      const softwareVersionEl = document.getElementById('george-software-version-field');
+      const osEl = document.getElementById('george-os-field');
+      const containers = [softwareEl, softwareVersionEl, osEl, dropdownPortalRef.current].filter(Boolean) as HTMLElement[];
+      if (containers.some((el) => el.contains(target))) return;
+      setOpenDropdown(null);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [openDropdown]);
+
+  useEffect(() => {
+    setDropdownReady(true);
+  }, []);
+
+  const flashInlineError = (message: string) => {
+    setInlineError(message);
+    if (inlineErrorTimeout.current) {
+      window.clearTimeout(inlineErrorTimeout.current);
+    }
+    inlineErrorTimeout.current = window.setTimeout(() => {
+      setInlineError('');
+    }, 2000);
+  };
+
+  useLayoutEffect(() => {
+    if (!openDropdown) {
+      setDropdownRect(null);
+      setDropdownWidth(null);
+      return;
+    }
+    const target =
+      openDropdown === 'software'
+        ? softwareFieldRef.current
+        : openDropdown === 'softwareVersion'
+          ? softwareVersionFieldRef.current
+          : osFieldRef.current;
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    setDropdownRect({
+      left: rect.left,
+      top: rect.bottom + 6,
+      width: rect.width
+    });
+  }, [openDropdown, softwareDraft, softwareVersionDraft, osDraft]);
+
+  useLayoutEffect(() => {
+    if (!openDropdown) return;
+    const options =
+      openDropdown === 'software'
+        ? filteredSoftwareOptions
+        : openDropdown === 'softwareVersion'
+          ? filteredSoftwareVersionOptions
+          : filteredOsOptions;
+    const label = options.length === 0 ? ['No matches'] : options;
+    const baseFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize || '16');
+    const fontSize = Math.round(baseFontSize * 0.85);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.font = `${fontSize}px "Geist Mono", "Geist Mono Fallback", monospace`;
+    let maxWidth = 0;
+    label.forEach((text) => {
+      const { width } = context.measureText(text);
+      if (width > maxWidth) maxWidth = width;
+    });
+    const padded = Math.ceil(maxWidth + 40);
+    setDropdownWidth(Math.max(padded, 140));
+  }, [openDropdown, filteredSoftwareOptions, filteredSoftwareVersionOptions, filteredOsOptions]);
 
   const hashLabel = (label: string) => {
     let hash = 0;
@@ -596,13 +739,34 @@ export default function Home() {
       } else {
         setStatusSteps([{ id: 'query_analysis', label: 'Running query analysis' }]);
         setActiveStatusId('query_analysis');
+        const userEmailValue = userEmailTag.trim();
+        const softwareValue = softwareTag.trim();
+        const softwareVersionValue = softwareVersionTag.trim();
+        const osValue = osTag.trim();
+        const osVersionValue = osVersionTag.trim();
+        const queryPayload: Record<string, unknown> = { query: cleanInput };
+        if (userEmailValue) {
+          queryPayload.user_email = userEmailValue;
+        }
+        if (softwareValue) {
+          queryPayload.software = softwareValue;
+        }
+        if (softwareVersionValue) {
+          queryPayload.software_version = softwareVersionValue;
+        }
+        if (osValue) {
+          queryPayload.os = osValue;
+        }
+        if (osVersionValue) {
+          queryPayload.os_version = osVersionValue;
+        }
         const analysisResponse = await fetch(queryAnalysisEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${accessToken}`
           },
-          body: JSON.stringify({ query: cleanInput })
+          body: JSON.stringify(queryPayload)
         });
         let analysisFinalEvent: AgentInputPayload | null = null;
         await consumeSseResponse(analysisResponse, (eventType, data) => {
@@ -617,6 +781,7 @@ export default function Home() {
           }
           if (eventType === 'done') {
             analysisFinalEvent = (data?.output as AgentInputPayload) || null;
+            console.log('[metadata][query_analysis]', analysisFinalEvent?.metadata);
             return;
           }
           if (eventType === 'error') {
@@ -696,11 +861,13 @@ export default function Home() {
 
           // Handle query analysis / ticket fetch
           if (stage === 'query_analysis' && eventData?.metadata) {
+            console.log('[metadata][query_analysis]', eventData.metadata);
             setSteps((prev) => ({
               ...prev,
               queryAnalysis: { metadata: eventData.metadata as Record<string, unknown>, isZendesk: false }
             }));
           } else if (stage === 'fetch_ticket' && eventData?.metadata) {
+            console.log('[metadata][fetch_ticket]', eventData.metadata);
             setSteps((prev) => ({
               ...prev,
               queryAnalysis: { metadata: eventData.metadata as Record<string, unknown>, isZendesk: true }
@@ -791,7 +958,21 @@ export default function Home() {
                 // Handle other tools (like SQL agent)
                 // Extract a meaningful query/description from input
                 let query = '';
-                if (input.input) {
+                if (toolName === 'CheckUserHistory') {
+                  const email = typeof input.user_email === 'string' ? input.user_email : '';
+                  const limit = typeof input.limit === 'number' ? input.limit : undefined;
+                  const ticketAvoid = typeof input.ticket_id_to_avoid === 'number' ? input.ticket_id_to_avoid : undefined;
+                  const parts: string[] = [];
+                  if (email) parts.push(`Email: ${email}`);
+                  if (typeof limit === 'number') parts.push(`Limit: ${limit}`);
+                  if (typeof ticketAvoid === 'number' && ticketAvoid > 0) {
+                    parts.push(`Ignore: ${ticketAvoid}`);
+                  }
+                  query = parts.join(' • ') || 'User history lookup';
+                } else if (toolName === 'GetTicketConversation') {
+                  const ticketId = typeof input.ticket_id === 'number' ? input.ticket_id : '';
+                  query = ticketId ? `Ticket ID: ${ticketId}` : 'Ticket conversation';
+                } else if (input.input) {
                   // SQL agent uses "input" field
                   query = String(input.input);
                 } else if (input.query) {
@@ -967,13 +1148,13 @@ export default function Home() {
         const looksLikeSSE = /^(event:|data:)/m.test(rawText);
         if (!looksLikeSSE) {
           try {
-        const parsed = JSON.parse(rawText);
-        setOutput(parsed.output || '');
-        const serverMs =
-          typeof parsed?.meta?.server_ms === 'number' ? Math.round(parsed.meta.server_ms) : undefined;
-        setTiming({ round_trip_ms: roundTripMs, server_ms: serverMs });
-        if (!response.ok) {
-          throw new Error(parsed.error || `Request failed with ${response.status}`);
+            const parsed = JSON.parse(rawText);
+            setOutput(parsed.output || '');
+            const serverMs =
+              typeof parsed?.meta?.server_ms === 'number' ? Math.round(parsed.meta.server_ms) : undefined;
+            setTiming({ round_trip_ms: roundTripMs, server_ms: serverMs });
+            if (!response.ok) {
+              throw new Error(parsed.error || `Request failed with ${response.status}`);
             }
           } catch (parseError) {
             // If JSON parsing fails, it might be SSE that wasn't parsed correctly
@@ -1082,6 +1263,7 @@ export default function Home() {
                     <div className="george-tip-stack">
                       <span className="george-tip-label">Direct question</span>
                       <span className="george-tip-desc">Ask a support question directly</span>
+                      <span className="george-tip-desc">You can enrich the agent context by filling the optional fields for more accurate and personalized answers.</span>
                     </div>
                   </div>
                   </div>
@@ -1105,6 +1287,7 @@ export default function Home() {
                     <div className="george-tip-stack">
                       <span className="george-tip-label">Direct question</span>
                       <span className="george-tip-desc">Ask a support question directly</span>
+                      <span className="george-tip-desc">You can enrich the agent context by filling the optional fields for more accurate and personalized answers.</span>
                     </div>
                   </div>
                   </div>
@@ -1115,8 +1298,355 @@ export default function Home() {
                   </svg>
                 </button>
               </form>
+              {!isTicketMode ? (
+                <div className="george-inline-fields">
+                  <div className="george-inline-field">
+                    {userEmailTag ? (
+                      <button
+                        type="button"
+                        className="george-inline-tag george-inline-tag-email"
+                        onClick={() => {
+                          setUserEmailDraft(userEmailTag);
+                          setUserEmailTag('');
+                        }}
+                        aria-label="Edit email"
+                      >
+                        {userEmailTag}
+                      </button>
+                    ) : (
+                        <input
+                          type="text"
+                          className="george-inline-input"
+                          placeholder="email"
+                          size={Math.max(userEmailDraft.length, 6)}
+                          value={userEmailDraft}
+                          onChange={(event) => setUserEmailDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            const trimmed = userEmailDraft.trim();
+                            if (!trimmed) return;
+                            setUserEmailTag(trimmed);
+                            setUserEmailDraft('');
+                          }
+                        }}
+                        disabled={loading}
+                      />
+                    )}
+                  </div>
+                  <div className="george-inline-field">
+                    {softwareTag ? (
+                      <button
+                        type="button"
+                        className="george-inline-tag george-inline-tag-muted"
+                        onClick={() => {
+                          setSoftwareDraft(softwareTag);
+                          setSoftwareTag('');
+                        }}
+                          aria-label="Edit software"
+                      >
+                        {softwareTag}
+                      </button>
+                    ) : (
+                        <div
+                          className="george-inline-select"
+                          id="george-software-field"
+                          ref={softwareFieldRef}
+                        >
+                          <input
+                            type="text"
+                            className="george-inline-input george-inline-input-select"
+                            placeholder="software"
+                            size={Math.max(softwareDraft.length, 9)}
+                            value={softwareDraft}
+                            onFocus={() => setOpenDropdown('software')}
+                            onClick={() => setOpenDropdown('software')}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setSoftwareDraft(nextValue);
+                              if (openDropdown !== 'software') {
+                                setOpenDropdown('software');
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                              }
+                              if (event.key === 'Escape') {
+                                setOpenDropdown(null);
+                              }
+                            }}
+                            disabled={loading}
+                          />
+                          <button
+                            type="button"
+                            className="george-inline-select-toggle"
+                            aria-label="Toggle software list"
+                            onClick={() =>
+                              setOpenDropdown((prev) => (prev === 'software' ? null : 'software'))
+                            }
+                            disabled={loading}
+                          >
+                            <span aria-hidden="true">⌄</span>
+                          </button>
+                        </div>
+                    )}
+                  </div>
+                  <div className="george-inline-field">
+                    {softwareVersionTag ? (
+                      <button
+                        type="button"
+                        className="george-inline-tag george-inline-tag-muted"
+                        onClick={() => {
+                          setSoftwareVersionDraft(softwareVersionTag);
+                          setSoftwareVersionTag('');
+                        }}
+                          aria-label="Edit software version"
+                      >
+                        {softwareVersionTag}
+                      </button>
+                    ) : (
+                        <div
+                          className="george-inline-select"
+                          id="george-software-version-field"
+                          ref={softwareVersionFieldRef}
+                        >
+                          <input
+                            type="text"
+                            className="george-inline-input george-inline-input-select"
+                            placeholder="software version"
+                            size={Math.max(softwareVersionDraft.length, 17)}
+                            value={softwareVersionDraft}
+                            onFocus={() => {
+                              if (!softwareTag) {
+                                flashInlineError('Please choose the software first.');
+                                return;
+                              }
+                              setOpenDropdown('softwareVersion');
+                            }}
+                            onClick={() => {
+                              if (!softwareTag) {
+                                flashInlineError('Please choose the software first.');
+                                return;
+                              }
+                              setOpenDropdown('softwareVersion');
+                            }}
+                            onChange={(event) => {
+                              if (!softwareTag) {
+                                flashInlineError('Please choose the software first.');
+                                return;
+                              }
+                              const nextValue = event.target.value;
+                              setSoftwareVersionDraft(nextValue);
+                              if (openDropdown !== 'softwareVersion') {
+                                setOpenDropdown('softwareVersion');
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                              }
+                              if (event.key === 'Escape') {
+                                setOpenDropdown(null);
+                              }
+                            }}
+                            disabled={loading}
+                          />
+                          <button
+                            type="button"
+                            className="george-inline-select-toggle"
+                            aria-label="Toggle software version list"
+                            onClick={() => {
+                              if (!softwareTag) {
+                                flashInlineError('Please choose the software first.');
+                                return;
+                              }
+                              setOpenDropdown((prev) =>
+                                prev === 'softwareVersion' ? null : 'softwareVersion'
+                              );
+                            }}
+                            disabled={loading}
+                          >
+                            <span aria-hidden="true">⌄</span>
+                          </button>
+                        </div>
+                    )}
+                  </div>
+                  <div className="george-inline-field">
+                    {osTag ? (
+                      <button
+                        type="button"
+                        className="george-inline-tag george-inline-tag-muted"
+                        onClick={() => {
+                          setOsDraft(osTag);
+                          setOsTag('');
+                        }}
+                          aria-label="Edit OS"
+                      >
+                        {osTag}
+                      </button>
+                    ) : (
+                        <div
+                          className="george-inline-select"
+                          id="george-os-field"
+                          ref={osFieldRef}
+                        >
+                          <input
+                            type="text"
+                            className="george-inline-input george-inline-input-select"
+                            placeholder="os"
+                            size={Math.max(osDraft.length, 3)}
+                            value={osDraft}
+                            onFocus={() => setOpenDropdown('os')}
+                            onClick={() => setOpenDropdown('os')}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setOsDraft(nextValue);
+                              if (openDropdown !== 'os') {
+                                setOpenDropdown('os');
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                              }
+                              if (event.key === 'Escape') {
+                                setOpenDropdown(null);
+                              }
+                            }}
+                            disabled={loading}
+                          />
+                          <button
+                            type="button"
+                            className="george-inline-select-toggle"
+                            aria-label="Toggle OS list"
+                            onClick={() =>
+                              setOpenDropdown((prev) => (prev === 'os' ? null : 'os'))
+                            }
+                            disabled={loading}
+                          >
+                            <span aria-hidden="true">⌄</span>
+                          </button>
+                        </div>
+                    )}
+                  </div>
+                  <div className="george-inline-field">
+                    {osVersionTag ? (
+                      <button
+                        type="button"
+                        className="george-inline-tag george-inline-tag-muted"
+                        onClick={() => {
+                          setOsVersionDraft(osVersionTag);
+                          setOsVersionTag('');
+                        }}
+                        aria-label="Edit OS version"
+                      >
+                        {osVersionTag}
+                      </button>
+                    ) : (
+                        <input
+                          type="text"
+                          className="george-inline-input"
+                          placeholder="os version"
+                          size={Math.max(osVersionDraft.length, 11)}
+                          value={osVersionDraft}
+                          onChange={(event) => setOsVersionDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            const trimmed = osVersionDraft.trim();
+                            if (!trimmed) return;
+                            setOsVersionTag(trimmed);
+                            setOsVersionDraft('');
+                          }
+                        }}
+                        disabled={loading}
+                      />
+                    )}
+                  </div>
+                  {inlineError ? <div className="george-inline-error">{inlineError}</div> : null}
+                </div>
+              ) : null}
             </div>
           </div>
+          {dropdownReady && openDropdown && dropdownRect
+            ? createPortal(
+                <div
+                  className="george-inline-popover george-inline-popover-portal"
+                  role="listbox"
+                  ref={dropdownPortalRef}
+                  style={{
+                    position: 'fixed',
+                    left: dropdownRect.left,
+                    top: dropdownRect.top,
+                    width: dropdownWidth ?? undefined
+                  }}
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  {openDropdown === 'software'
+                    ? filteredSoftwareOptions.length === 0
+                      ? (
+                          <div className="george-inline-popover-empty">No matches</div>
+                        )
+                      : filteredSoftwareOptions.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className="george-inline-option"
+                            onClick={() => {
+                              setSoftwareTag(option);
+                              setSoftwareDraft('');
+                              setOpenDropdown(null);
+                            }}
+                          >
+                            {option}
+                          </button>
+                        ))
+                    : null}
+                  {openDropdown === 'softwareVersion'
+                    ? filteredSoftwareVersionOptions.length === 0
+                      ? (
+                          <div className="george-inline-popover-empty">No matches</div>
+                        )
+                      : filteredSoftwareVersionOptions.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className="george-inline-option"
+                            onClick={() => {
+                              setSoftwareVersionTag(option);
+                              setSoftwareVersionDraft('');
+                              setOpenDropdown(null);
+                            }}
+                          >
+                            {option}
+                          </button>
+                        ))
+                    : null}
+                  {openDropdown === 'os'
+                    ? filteredOsOptions.length === 0
+                      ? (
+                          <div className="george-inline-popover-empty">No matches</div>
+                        )
+                      : filteredOsOptions.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className="george-inline-option"
+                            onClick={() => {
+                              setOsTag(option);
+                              setOsDraft('');
+                              setOpenDropdown(null);
+                            }}
+                          >
+                            {option}
+                          </button>
+                        ))
+                    : null}
+                </div>,
+                document.body
+              )
+            : null}
         </main>
       ) : (
         <main className="george-main george-main-with-response">
