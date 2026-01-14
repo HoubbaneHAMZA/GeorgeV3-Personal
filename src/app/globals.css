@@ -514,7 +514,7 @@ html, body {
 }
 
 .george-greeting-text {
-  margin: 0 0 50px; /*Space between greeting text and input bar*/
+  margin: 0 0 70px; /*Space between greeting text and input bar*/
   font-size: clamp(0.9rem, 1.3vw, 0.98rem);
   color: var(--muted);
   line-height: 1.35;
@@ -533,6 +533,11 @@ html, body {
   transition: transform 0.55s cubic-bezier(0.22, 1.25, 0.36, 1), opacity 0.3s ease;
   transform-origin: top center;
   gap: 10px;
+}
+
+.george-input-shell {
+  position: relative;
+  width: 100%;
 }
 
 .george-input-container.is-hidden {
@@ -568,6 +573,11 @@ html, body {
   padding: 8px 12px;
 }
 
+.george-input-form.is-dragging {
+  border-color: var(--accent);
+  background: rgba(207, 92, 42, 0.06);
+}
+
 .george-inline-fields {
   display: flex;
   align-items: center;
@@ -576,6 +586,125 @@ html, body {
   justify-content: flex-start;
   flex-wrap: wrap;
   order: 2;
+}
+
+.george-input-file {
+  display: none;
+}
+
+.george-input-attach {
+  width: 32px;
+  height: 32px;
+  border: none;
+  font-size: 1.4rem;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  border-radius: 50%;
+  transition: background 0.2s, color 0.2s;
+}
+
+.george-input-attach:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.george-input-attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.george-attachments-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+}
+
+.george-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.george-attachments .george-attachment {
+  animation: georgeAttachmentIn 0.18s ease-out;
+}
+
+.george-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: #f7f2ee;
+  padding: 6px 8px;
+  border-radius: 10px;
+  position: relative;
+}
+
+.george-attachment.is-removing {
+  animation: georgeAttachmentOut 0.16s ease-in forwards;
+}
+
+.george-attachment-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.george-attachment-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  transform: scale(0.9);
+}
+
+.george-attachment:hover .george-attachment-remove {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.george-attachment-remove:hover {
+  background: #f6f1ed;
+}
+
+@keyframes georgeAttachmentIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes georgeAttachmentOut {
+  to { opacity: 0; transform: translateY(-4px) scale(0.96); }
+}
+
+.george-attachments-error {
+  font-size: 0.75rem;
+  color: #c13d35;
+  font-family: 'Geist Mono', 'Geist Mono Fallback', monospace;
 }
 
 .george-inline-field {

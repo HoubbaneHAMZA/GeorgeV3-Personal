@@ -33,6 +33,14 @@ type AgentInputPayload = {
   conversation?: unknown;
 };
 
+type LocalAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+};
+
 // Format filter key to readable label
 function formatFilterKey(key: string): string {
   return key
@@ -92,6 +100,15 @@ function escapeHtml(input: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function renderInlineMarkdown(escaped: string) {
@@ -283,6 +300,12 @@ export default function Home() {
   const [dropdownReady, setDropdownReady] = useState(false);
   const [dropdownWidth, setDropdownWidth] = useState<number | null>(null);
   const [inlineError, setInlineError] = useState('');
+  const [attachments, setAttachments] = useState<LocalAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [isDragActive, setIsDragActive] = useState(false);
+  const [removingAttachmentIds, setRemovingAttachmentIds] = useState<Set<string>>(new Set());
+  const attachmentErrorTimeout = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const softwareFieldRef = useRef<HTMLDivElement | null>(null);
   const softwareVersionFieldRef = useRef<HTMLDivElement | null>(null);
   const osFieldRef = useRef<HTMLDivElement | null>(null);
@@ -348,8 +371,20 @@ export default function Home() {
     }
   };
   const isTicketMode = Boolean(ticketTag);
+  const maxAttachments = 3;
+  const attachmentsRemaining = Math.max(0, maxAttachments - attachments.length);
+  const attachmentsDisabled = loading || isTicketMode || attachmentsRemaining === 0;
   const showInput = !hasResponse;
   const showGeneratedBy = statusDone;
+  useEffect(() => {
+    if (!isTicketMode) return;
+    if (attachments.length > 0) {
+      setAttachments([]);
+    }
+    setAttachmentError('');
+    setIsDragActive(false);
+    setRemovingAttachmentIds(new Set());
+  }, [isTicketMode, attachments.length]);
   const toolTags = useMemo(() => (
     Array.from(
       new Set(
@@ -434,6 +469,91 @@ export default function Home() {
     inlineErrorTimeout.current = window.setTimeout(() => {
       setInlineError('');
     }, 2000);
+  };
+
+  const flashAttachmentError = (message: string) => {
+    setAttachmentError(message);
+    if (attachmentErrorTimeout.current) {
+      window.clearTimeout(attachmentErrorTimeout.current);
+    }
+    attachmentErrorTimeout.current = window.setTimeout(() => {
+      setAttachmentError('');
+    }, 2500);
+  };
+
+  const logAttachmentSummary = (label: string) => {
+    if (attachments.length === 0) return;
+    const totalBytes = attachments.reduce((sum, item) => sum + item.size, 0);
+    const totalDataUrlChars = attachments.reduce((sum, item) => sum + item.dataUrl.length, 0);
+    console.log(`[attachments][${label}]`, {
+      count: attachments.length,
+      totalBytes,
+      totalDataUrlChars,
+      files: attachments.map((item) => ({
+        name: item.name,
+        type: item.type,
+        size: item.size,
+        dataUrlChars: item.dataUrl.length
+      }))
+    });
+  };
+
+  const addAttachments = async (files: File[]) => {
+    if (files.length === 0) return;
+    if (attachmentsRemaining === 0) {
+      window.alert(`Max allowed attachments: ${maxAttachments}`);
+      flashAttachmentError(`Max allowed attachments: ${maxAttachments}`);
+      return;
+    }
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    if (imageFiles.length !== files.length) {
+      window.alert('Only image files are supported.');
+      flashAttachmentError('Only image files are supported.');
+      return;
+    }
+    if (imageFiles.length > attachmentsRemaining) {
+      window.alert(`Max allowed attachments: ${maxAttachments}`);
+      flashAttachmentError(`Max allowed attachments: ${maxAttachments}`);
+      return;
+    }
+    const additions = await Promise.all(
+      imageFiles.map(async (file) => ({
+        id: crypto.randomUUID(),
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl: await readFileAsDataUrl(file)
+      }))
+    );
+    if (additions.length > 0) {
+      setAttachments((prev) => {
+        const existing = new Set(prev.map((item) => item.dataUrl));
+        const seen = new Set<string>();
+        const deduped = additions.filter((item) => {
+          if (existing.has(item.dataUrl)) return false;
+          if (seen.has(item.dataUrl)) return false;
+          seen.add(item.dataUrl);
+          return true;
+        });
+        return deduped.length > 0 ? [...prev, ...deduped] : prev;
+      });
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setRemovingAttachmentIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    window.setTimeout(() => {
+      setAttachments((prev) => prev.filter((item) => item.id !== id));
+      setRemovingAttachmentIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 170);
   };
 
   useLayoutEffect(() => {
@@ -654,6 +774,38 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [infoOpen]);
 
+  const handleAttachmentChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (attachmentsDisabled) return;
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    await addAttachments(files);
+    event.target.value = '';
+  };
+
+  const handleAttachmentDrop = async (event: React.DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsDragActive(false);
+    if (attachmentsDisabled) return;
+    if (isTicketMode) {
+      flashAttachmentError('Attachments are disabled for ticket lookups.');
+      return;
+    }
+    const files = Array.from(event.dataTransfer.files || []);
+    await addAttachments(files);
+  };
+
+  const handleAttachmentDragOver = (event: React.DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (attachmentsDisabled) return;
+    setIsDragActive(true);
+  };
+
+  const handleAttachmentDragLeave = (event: React.DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextTarget = event.relatedTarget as Node | null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    setIsDragActive(false);
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
@@ -739,6 +891,9 @@ export default function Home() {
       } else {
         setStatusSteps([{ id: 'query_analysis', label: 'Running query analysis' }]);
         setActiveStatusId('query_analysis');
+        if (attachments.length > 0) {
+          logAttachmentSummary('pre-query-analysis');
+        }
         const userEmailValue = userEmailTag.trim();
         const softwareValue = softwareTag.trim();
         const softwareVersionValue = softwareVersionTag.trim();
@@ -807,13 +962,37 @@ export default function Home() {
             }
           }));
         }
-        agentInputPayload = analysisOutput;
+        if (analysisOutput && attachments.length > 0) {
+          const attachmentsPayload = attachments.map((attachment) => attachment.dataUrl);
+          const conversation = Array.isArray(analysisOutput.conversation)
+            ? analysisOutput.conversation.map((entry) =>
+                entry && typeof entry === 'object' ? { ...entry } : entry
+              )
+            : [];
+          if (conversation.length === 0) {
+            conversation.push({ role: 'user', content: cleanInput, attachments: attachmentsPayload });
+          } else {
+            const lastIndex = conversation.length - 1;
+            const last = conversation[lastIndex];
+            conversation[lastIndex] =
+              last && typeof last === 'object'
+                ? { ...last, attachments: attachmentsPayload }
+                : { role: 'user', content: cleanInput, attachments: attachmentsPayload };
+          }
+          agentInputPayload = { ...analysisOutput, conversation };
+        } else {
+          agentInputPayload = analysisOutput;
+        }
         setStatusSteps((prev) => {
           const exists = prev.some((step) => step.id === 'start');
           if (exists) return prev;
           return [...prev, { id: 'start', label: 'Starting agent run' }];
         });
         setActiveStatusId('start');
+      }
+
+      if (!detectedIsZendeskTicket && attachments.length > 0) {
+        logAttachmentSummary('pre-agent-run');
       }
 
       const response = await fetch(agentEndpoint, {
@@ -859,6 +1038,11 @@ export default function Home() {
           const normalizedStage = stage.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
           const label = message.trim() ? message : normalizedStage;
 
+          if (stage === 'attachments_error') {
+            console.warn('[attachments][analysis_error_detail]', eventData);
+            return;
+          }
+
           // Handle query analysis / ticket fetch
           if (stage === 'query_analysis' && eventData?.metadata) {
             console.log('[metadata][query_analysis]', eventData.metadata);
@@ -879,6 +1063,7 @@ export default function Home() {
             const total = typeof eventData.total === 'number' ? eventData.total : 0;
             const cached = typeof eventData.cached === 'number' ? eventData.cached : 0;
             const analyzed = typeof eventData.analyzed === 'number' ? eventData.analyzed : 0;
+            console.log('[attachments][analysis]', { total, cached, analyzed, eventData });
             if (total > 0) {
               setSteps((prev) => {
                 const existing = prev.attachments || { total: 0, cached: 0, analyzed: 0 };
@@ -1073,6 +1258,12 @@ export default function Home() {
           const outputText = String(data?.output || '');
           if (outputText) {
             setOutput((prev) => (prev ? prev : outputText));
+            if (outputText.includes('Error analyzing the image')) {
+              console.warn('[attachments][analysis_error]', {
+                outputText,
+                attachmentCount: attachments.length
+              });
+            }
           }
           const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
           const serverMs =
@@ -1193,7 +1384,47 @@ export default function Home() {
             </div>
 
             <div className={`george-input-container${showInput ? ' is-visible' : ' is-hidden'}`}>
-              <form className="george-input-form" onSubmit={handleSubmit}>
+              <div className="george-input-shell">
+                {!isTicketMode && (attachments.length > 0 || attachmentError) ? (
+                  <div className="george-attachments-panel">
+                    {attachments.length > 0 ? (
+                      <div className="george-attachments">
+                        {attachments.map((attachment) => (
+                          <div
+                            key={attachment.id}
+                            className={`george-attachment${
+                              removingAttachmentIds.has(attachment.id) ? ' is-removing' : ''
+                            }`}
+                          >
+                            <img
+                              src={attachment.dataUrl}
+                              alt={attachment.name}
+                              className="george-attachment-thumb"
+                            />
+                            <button
+                              type="button"
+                              className="george-attachment-remove"
+                              onClick={() => removeAttachment(attachment.id)}
+                              aria-label={`Remove ${attachment.name}`}
+                            >
+                              x
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {attachmentError ? (
+                      <div className="george-attachments-error">{attachmentError}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <form
+                  className={`george-input-form${isDragActive ? ' is-dragging' : ''}`}
+                  onSubmit={handleSubmit}
+                  onDragOver={handleAttachmentDragOver}
+                  onDragLeave={handleAttachmentDragLeave}
+                  onDrop={handleAttachmentDrop}
+                >
                 <div className="george-input-wrapper">
                   {ticketTag && (
                     <span className="george-ticket-tag">{ticketTag}</span>
@@ -1235,6 +1466,31 @@ export default function Home() {
                     )}
                   </div>
                 </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple={attachmentsRemaining > 1}
+                  className="george-input-file"
+                  onChange={handleAttachmentChange}
+                  disabled={attachmentsDisabled}
+                />
+                <button
+                  type="button"
+                  className="george-input-attach"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={attachmentsDisabled}
+                  aria-label={
+                    isTicketMode
+                      ? 'Attachments disabled for ticket lookup'
+                      : attachmentsRemaining === 0
+                        ? `Max allowed attachments: ${maxAttachments}`
+                        : 'Add attachments'
+                  }
+                  title={attachmentsRemaining === 0 ? `Max allowed attachments: ${maxAttachments}` : undefined}
+                >
+                  <span aria-hidden="true">+</span>
+                </button>
                 <div className="george-input-info-wrap" data-open={infoOpen} ref={infoRef}>
                   <button
                     type="button"
@@ -1297,7 +1553,8 @@ export default function Home() {
                     <path d="M2 10L18 2L12 18L10 10L2 10Z" fill="currentColor"/>
                   </svg>
                 </button>
-              </form>
+                </form>
+              </div>
               {!isTicketMode ? (
                 <div className="george-inline-fields">
                   <div className="george-inline-field">
