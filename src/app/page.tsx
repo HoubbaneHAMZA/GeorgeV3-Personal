@@ -33,6 +33,32 @@ type AgentInputPayload = {
   conversation?: unknown;
 };
 
+type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+  sources?: string[];
+  trace?: AgentTraceData;
+  timing?: TimingInfo;
+  isTraceOpen?: boolean;
+  isSourcesOpen?: boolean;
+  collapsedTools?: Record<string, boolean>;
+};
+
+type AgentTraceData = {
+  queryAnalysis?: { metadata: Record<string, unknown>; isZendesk: boolean };
+  attachments?: { total: number; cached: number; analyzed: number };
+  agentThinking?: {
+    queries: Array<{
+      callId: string;
+      tool: string;
+      query: string;
+      filters: unknown;
+      sources: string[];
+      output?: unknown;
+    }>;
+  };
+};
+
 type LocalAttachment = {
   id: string;
   name: string;
@@ -283,6 +309,8 @@ export default function Home() {
   const agentEndpoint = '/api/agent';
   const queryAnalysisEndpoint = '/api/query-analysis';
   const ticketFetchEndpoint = '/api/ticket-fetch';
+  const sessionStorageKey = useMemo(() => `george:session:${pathname}`, [pathname]);
+  const messagesStorageKey = useMemo(() => `george:messages:${pathname}`, [pathname]);
   const [input, setInput] = useState('');
   const [ticketError, setTicketError] = useState('');
   const [userEmailDraft, setUserEmailDraft] = useState('');
@@ -296,12 +324,29 @@ export default function Home() {
   const [osVersionDraft, setOsVersionDraft] = useState('');
   const [osVersionTag, setOsVersionTag] = useState('');
   const [openDropdown, setOpenDropdown] = useState<'software' | 'softwareVersion' | 'os' | null>(null);
+  const [dropdownPhase, setDropdownPhase] = useState<'open' | 'closing' | null>(null);
+  const dropdownAnimTimeout = useRef<number | null>(null);
+  const [showAbortConfirm, setShowAbortConfirm] = useState(false);
+  const [agentInterrupted, setAgentInterrupted] = useState<string | null>(null);
+  const [showNewChatConfirm, setShowNewChatConfirm] = useState(false);
+  const [isZendeskNotFoundClosing, setIsZendeskNotFoundClosing] = useState(false);
+  const [isAgentInterruptedClosing, setIsAgentInterruptedClosing] = useState(false);
+  const [isAbortConfirmClosing, setIsAbortConfirmClosing] = useState(false);
+  const [isNewChatConfirmClosing, setIsNewChatConfirmClosing] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortRequestedRef = useRef(false);
+  const runModeRef = useRef<'initial' | 'chat' | null>(null);
+  const zendeskCloseTimeout = useRef<number | null>(null);
+  const agentInterruptedCloseTimeout = useRef<number | null>(null);
+  const abortConfirmCloseTimeout = useRef<number | null>(null);
+  const newChatConfirmCloseTimeout = useRef<number | null>(null);
   const [dropdownRect, setDropdownRect] = useState<{ left: number; top: number; width: number } | null>(null);
   const [dropdownReady, setDropdownReady] = useState(false);
   const [dropdownWidth, setDropdownWidth] = useState<number | null>(null);
   const [inlineError, setInlineError] = useState('');
   const [attachments, setAttachments] = useState<LocalAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState('');
+  const [zendeskNotFound, setZendeskNotFound] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [removingAttachmentIds, setRemovingAttachmentIds] = useState<Set<string>>(new Set());
   const attachmentErrorTimeout = useRef<number | null>(null);
@@ -312,16 +357,13 @@ export default function Home() {
   const dropdownPortalRef = useRef<HTMLDivElement | null>(null);
   const inlineErrorTimeout = useRef<number | null>(null);
   
-  // Extract ticket number if input starts with # followed by numbers only
-  const ticketMatch = input.match(/^(#\d+)(.*)$/);
-  const ticketTag = ticketMatch ? ticketMatch[1] : null;
-  const inputAfterTag = ticketMatch ? ticketMatch[2] : input;
   const [loading, setLoading] = useState(false);
-  const [output, setOutput] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [timing, setTiming] = useState<TimingInfo | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const infoRef = useRef<HTMLDivElement | null>(null);
+  const traceBufferRef = useRef<AgentTraceData>({});
   const [steps, setSteps] = useState<{
     started: boolean;
     queryAnalysis?: { metadata: Record<string, unknown>; isZendesk: boolean };
@@ -331,15 +373,30 @@ export default function Home() {
   const [statusSteps, setStatusSteps] = useState<Array<{ id: string; label: string }>>([]);
   const [activeStatusId, setActiveStatusId] = useState<string | null>(null);
   const [statusDone, setStatusDone] = useState(false);
-  const [isTraceOpen, setIsTraceOpen] = useState(false);
-  const [collapsedTools, setCollapsedTools] = useState<Record<string, boolean>>({});
   const [hasResponse, setHasResponse] = useState(false);
-  const [logoToResponse, setLogoToResponse] = useState(false);
+  const [isChatOverlayVisible, setIsChatOverlayVisible] = useState(false);
+  const [metaOverlay, setMetaOverlay] = useState<{
+    type: 'trace' | 'sources';
+    messageIndex: number;
+    anchorRect: DOMRect;
+    align: 'left' | 'right';
+    vertical: 'above' | 'below';
+  } | null>(null);
+  const [isMetaOverlayClosing, setIsMetaOverlayClosing] = useState(false);
+  const metaOverlayCloseTimeout = useRef<number | null>(null);
+  const [isChatAppearing, setIsChatAppearing] = useState(false);
+  const chatAppearTimeout = useRef<number | null>(null);
+  const [initialStreamStarted, setInitialStreamStarted] = useState(false);
+  const [isReturningHome, setIsReturningHome] = useState(false);
+  const returnHomeTimeout = useRef<number | null>(null);
   const thinkingRef = useRef<HTMLSpanElement | null>(null);
   const branchesRef = useRef<HTMLDivElement | null>(null);
   const [arrowPaths, setArrowPaths] = useState<string[]>([]);
   const [toolTagPositions, setToolTagPositions] = useState<Array<{ left: number; top: number }>>([]);
+  const toolTagPositionsRef = useRef<Array<{ left: number; top: number }>>([]);
   const stepRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const chatTranscriptRef = useRef<HTMLDivElement | null>(null);
+  const toolLayoutAnimRef = useRef<number | null>(null);
   const activeStatusIndex = activeStatusId
     ? statusSteps.findIndex((step) => step.id === activeStatusId)
     : -1;
@@ -349,13 +406,11 @@ export default function Home() {
       : statusDone
         ? statusSteps.length - 1
         : Math.max(activeStatusIndex, 0);
-  const sources = Array.from(
-    new Set(
-      (steps.agentThinking?.queries || [])
-        .flatMap((q) => q.sources || [])
-        .filter((url) => url.length > 0)
-    )
-  );
+  const isChatMode = messages.length > 0;
+  // Extract ticket number if input starts with # followed by numbers only (initial mode only).
+  const ticketMatch = !isChatMode ? input.match(/^(#\d+)(.*)$/) : null;
+  const ticketTag = ticketMatch ? ticketMatch[1] : null;
+  const inputAfterTag = ticketMatch ? ticketMatch[2] : input;
   const formatSourceLabel = (url: string) => {
     try {
       const parsed = new URL(url);
@@ -370,12 +425,60 @@ export default function Home() {
       return url;
     }
   };
+  const createAssistantMessage = (content: string): ChatMessage => ({
+    role: 'assistant',
+    content,
+    sources: undefined,
+    trace: undefined,
+    timing: undefined,
+    isTraceOpen: false,
+    isSourcesOpen: false,
+    collapsedTools: {}
+  });
+  const createUserMessage = (content: string): ChatMessage => ({
+    role: 'user',
+    content
+  });
+  const snapshotTraceData = (trace?: AgentTraceData | null): AgentTraceData | undefined => {
+    if (!trace) return undefined;
+    const snapshot: AgentTraceData = {};
+    if (trace.queryAnalysis) {
+      snapshot.queryAnalysis = {
+        metadata: { ...trace.queryAnalysis.metadata },
+        isZendesk: trace.queryAnalysis.isZendesk
+      };
+    }
+    if (trace.attachments) {
+      snapshot.attachments = { ...trace.attachments };
+    }
+    if (trace.agentThinking) {
+      snapshot.agentThinking = {
+        queries: trace.agentThinking.queries.map((q) => ({
+          ...q,
+          sources: Array.isArray(q.sources) ? [...q.sources] : []
+        }))
+      };
+    }
+    return snapshot;
+  };
+  const buildSourcesFromTrace = (trace?: AgentTraceData): string[] => {
+    if (!trace?.agentThinking?.queries) return [];
+    return Array.from(
+      new Set(
+        trace.agentThinking.queries
+          .flatMap((q) => q.sources || [])
+          .filter((url) => url.length > 0)
+      )
+    );
+  };
   const isTicketMode = Boolean(ticketTag);
   const maxAttachments = 3;
   const attachmentsRemaining = Math.max(0, maxAttachments - attachments.length);
   const attachmentsDisabled = loading || isTicketMode || attachmentsRemaining === 0;
-  const showInput = !hasResponse;
+  const showInput = !hasResponse && !isChatMode;
   const showGeneratedBy = statusDone;
+  const showInitialLoader = steps.started && !statusDone && !sessionId && !initialStreamStarted;
+  const showTranscript = messages.length > 0 && (statusDone || sessionId || initialStreamStarted);
   useEffect(() => {
     if (!isTicketMode) return;
     if (attachments.length > 0) {
@@ -443,6 +546,33 @@ export default function Home() {
   }, [softwareTag, softwareVersionOptions, softwareVersionTag]);
 
   useEffect(() => {
+    setDropdownReady(true);
+  }, []);
+
+  const closeDropdown = (next?: 'software' | 'softwareVersion' | 'os' | null) => {
+    if (!openDropdown || dropdownPhase === 'closing') return;
+    setDropdownPhase('closing');
+    if (dropdownAnimTimeout.current) {
+      window.clearTimeout(dropdownAnimTimeout.current);
+    }
+    dropdownAnimTimeout.current = window.setTimeout(() => {
+      setOpenDropdown(next ?? null);
+      setDropdownPhase(next ? 'open' : null);
+      dropdownAnimTimeout.current = null;
+    }, 160);
+  };
+
+  const openDropdownWith = (next: 'software' | 'softwareVersion' | 'os') => {
+    if (openDropdown === next && dropdownPhase !== 'closing') return;
+    if (openDropdown && openDropdown !== next) {
+      closeDropdown(next);
+      return;
+    }
+    setOpenDropdown(next);
+    setDropdownPhase('open');
+  };
+
+  useEffect(() => {
     if (!openDropdown) return;
     const handleClick = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -451,15 +581,11 @@ export default function Home() {
       const osEl = document.getElementById('george-os-field');
       const containers = [softwareEl, softwareVersionEl, osEl, dropdownPortalRef.current].filter(Boolean) as HTMLElement[];
       if (containers.some((el) => el.contains(target))) return;
-      setOpenDropdown(null);
+      closeDropdown();
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [openDropdown]);
-
-  useEffect(() => {
-    setDropdownReady(true);
-  }, []);
 
   const flashInlineError = (message: string) => {
     setInlineError(message);
@@ -601,166 +727,210 @@ export default function Home() {
     setDropdownWidth(Math.max(padded, 140));
   }, [openDropdown, filteredSoftwareOptions, filteredSoftwareVersionOptions, filteredOsOptions]);
 
-  const hashLabel = (label: string) => {
-    let hash = 0;
-    for (let i = 0; i < label.length; i += 1) {
-      hash = (hash * 31 + label.charCodeAt(i)) % 100000;
-    }
-    return hash / 100000;
-  };
-
-  const getRectIntersection = (
-    startX: number,
-    startY: number,
-    rect: { left: number; right: number; top: number; bottom: number }
-  ) => {
-    const centerX = (rect.left + rect.right) / 2;
-    const centerY = (rect.top + rect.bottom) / 2;
-    const dx = centerX - startX;
-    const dy = centerY - startY;
-    if (dx === 0 && dy === 0) return { x: centerX, y: centerY };
-    const candidates: Array<{ t: number; x: number; y: number }> = [];
-    if (dx !== 0) {
-      const tLeft = (rect.left - startX) / dx;
-      const yLeft = startY + tLeft * dy;
-      if (tLeft > 0 && yLeft >= rect.top && yLeft <= rect.bottom) {
-        candidates.push({ t: tLeft, x: rect.left, y: yLeft });
-      }
-      const tRight = (rect.right - startX) / dx;
-      const yRight = startY + tRight * dy;
-      if (tRight > 0 && yRight >= rect.top && yRight <= rect.bottom) {
-        candidates.push({ t: tRight, x: rect.right, y: yRight });
-      }
-    }
-    if (dy !== 0) {
-      const tTop = (rect.top - startY) / dy;
-      const xTop = startX + tTop * dx;
-      if (tTop > 0 && xTop >= rect.left && xTop <= rect.right) {
-        candidates.push({ t: tTop, x: xTop, y: rect.top });
-      }
-      const tBottom = (rect.bottom - startY) / dy;
-      const xBottom = startX + tBottom * dx;
-      if (tBottom > 0 && xBottom >= rect.left && xBottom <= rect.right) {
-        candidates.push({ t: tBottom, x: xBottom, y: rect.bottom });
-      }
-    }
-    if (candidates.length === 0) return { x: centerX, y: centerY };
-    candidates.sort((a, b) => a.t - b.t);
-    return { x: candidates[0].x, y: candidates[0].y };
-  };
-
   const resetConversation = () => {
+    if (returnHomeTimeout.current) {
+      window.clearTimeout(returnHomeTimeout.current);
+      returnHomeTimeout.current = null;
+    }
+    setIsReturningHome(true);
+    returnHomeTimeout.current = window.setTimeout(() => {
+      setIsReturningHome(false);
+      returnHomeTimeout.current = null;
+    }, 420);
     setInput('');
     setTicketError('');
     setLoading(false);
-    setOutput('');
+    setMessages([]);
+    setSessionId(null);
+    traceBufferRef.current = {};
+    try {
+      localStorage.removeItem(sessionStorageKey);
+      localStorage.removeItem(messagesStorageKey);
+    } catch {
+      // Ignore storage failures (private mode, SSR).
+    }
     setError('');
-    setTiming(null);
     setSteps({ started: false });
     setStatusSteps([]);
     setActiveStatusId(null);
     setStatusDone(false);
-    setIsTraceOpen(false);
-    setCollapsedTools({});
-    setLogoToResponse(false);
     setHasResponse(false);
+    setIsChatOverlayVisible(false);
+    setInitialStreamStarted(false);
   };
 
   useEffect(() => {
-    if (output) {
-      setLogoToResponse(true);
+    try {
+      const stored = localStorage.getItem(sessionStorageKey);
+      if (stored && !sessionId) {
+        setSessionId(stored);
+      }
+    } catch {
+      // Ignore storage failures.
     }
-  }, [output]);
+  }, [sessionStorageKey, sessionId]);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(messagesStorageKey);
+      if (!stored || messages.length > 0) return;
+      const parsed = JSON.parse(stored) as ChatMessage[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setMessages(parsed);
+        setHasResponse(true);
+        setStatusDone(true);
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [messages.length, messagesStorageKey]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      localStorage.setItem(sessionStorageKey, sessionId);
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [sessionId, sessionStorageKey]);
+
+  useEffect(() => {
+    try {
+      if (messages.length === 0) {
+        localStorage.removeItem(messagesStorageKey);
+        return;
+      }
+      localStorage.setItem(messagesStorageKey, JSON.stringify(messages));
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [messages, messagesStorageKey]);
+
+  useLayoutEffect(() => {
+    if (toolLayoutAnimRef.current) {
+      cancelAnimationFrame(toolLayoutAnimRef.current);
+      toolLayoutAnimRef.current = null;
+    }
     if (!branchesRef.current || !thinkingRef.current) {
       setArrowPaths([]);
       setToolTagPositions([]);
+      toolTagPositionsRef.current = [];
+      return;
+    }
+    if (toolTags.length === 0) {
+      setArrowPaths([]);
+      setToolTagPositions([]);
+      toolTagPositionsRef.current = [];
       return;
     }
     const container = branchesRef.current;
     const anchor = thinkingRef.current;
-    if (toolTags.length === 0) {
-      setArrowPaths([]);
-      setToolTagPositions([]);
-      return;
-    }
     const containerRect = container.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
-    const startX = anchorRect.left + anchorRect.width / 2 - containerRect.left;
-    const startY = anchorRect.top + anchorRect.height / 2 - containerRect.top;
+    const anchorX = anchorRect.left + anchorRect.width / 2 - containerRect.left;
+    const anchorY = anchorRect.top + anchorRect.height / 2 - containerRect.top;
 
     const width = Math.max(containerRect.width, 360);
-    const baseY = startY + 70;
-    const positions = toolTags.map((label, index) => {
-      const seed = hashLabel(label);
-      const angle = seed * Math.PI * 1.6 + index * 0.4;
-      const radius = 110 + (seed * 60) + (index % 3) * 14;
-      const left = width / 2 + Math.cos(angle) * radius;
-      const top = baseY + Math.sin(angle) * 34 + (index % 2 ? 22 : -10);
-      return {
-        left: Math.max(32, Math.min(width - 32, left)),
-        top: Math.max(baseY - 6, top),
-        radius: Math.max(52, Math.min(140, 26 + label.length * 5.2))
-      };
+    const height = Math.max(containerRect.height, 260);
+    const maxPerRing = 4;
+    const baseRadius = 200;
+    const ringGap = 80;
+    const startAngle = Math.PI * 0.85;
+    const endAngle = Math.PI * 0.15;
+
+    const nextPositions = toolTags.map((label, index) => {
+      const ringIndex = Math.floor(index / maxPerRing);
+      const ringStart = ringIndex * maxPerRing;
+      const ringCount = Math.min(maxPerRing, toolTags.length - ringStart);
+      const positionIndex = index - ringStart;
+      const angle =
+        ringCount === 1
+          ? Math.PI / 2
+          : startAngle + (endAngle - startAngle) * (positionIndex / (ringCount - 1));
+      const radius = baseRadius + ringIndex * ringGap;
+      let left = anchorX + Math.cos(angle) * radius;
+      let top = anchorY + Math.sin(angle) * radius + ringIndex * 8;
+      left = Math.max(48, Math.min(width - 48, left));
+      top = Math.max(anchorY + 36, Math.min(height - 36, top));
+      return { left, top, angle };
     });
-    const relaxed = positions.map((pos) => ({ ...pos }));
-    for (let iter = 0; iter < 26; iter += 1) {
-      let moved = false;
-      for (let i = 0; i < relaxed.length; i += 1) {
-        for (let j = i + 1; j < relaxed.length; j += 1) {
-          const dx = relaxed[j].left - relaxed[i].left;
-          const dy = relaxed[j].top - relaxed[i].top;
-          const dist = Math.hypot(dx, dy) || 1;
-          const minDistance = relaxed[i].radius + relaxed[j].radius + 18;
-          if (dist < minDistance) {
-            const push = (minDistance - dist) / 2;
-            const nx = dx / dist;
-            const ny = dy / dist;
-            relaxed[i].left -= nx * push;
-            relaxed[i].top -= ny * push;
-            relaxed[j].left += nx * push;
-            relaxed[j].top += ny * push;
-            moved = true;
-          }
-        }
-      }
-      if (!moved) break;
+
+    const buildPaths = (positions: Array<{ left: number; top: number; angle: number }>) =>
+      positions.map((pos) => {
+        const dx = pos.left - anchorX;
+        const dy = pos.top - anchorY;
+        const dist = Math.hypot(dx, dy) || 1;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const perpX = -ny;
+        const perpY = nx;
+        const direction = nx >= 0 ? -1 : 1;
+        const curve = 18;
+        const offsetX = perpX * curve * direction;
+        const offsetY = perpY * curve * direction;
+        const ctrl1X = anchorX + nx * dist * 0.35 + offsetX;
+        const ctrl1Y = anchorY + ny * dist * 0.35 + offsetY;
+        const ctrl2X = anchorX + nx * dist * 0.7 + offsetX;
+        const ctrl2Y = anchorY + ny * dist * 0.7 + offsetY;
+        return `M ${anchorX} ${anchorY} C ${ctrl1X} ${ctrl1Y}, ${ctrl2X} ${ctrl2Y}, ${pos.left} ${pos.top}`;
+      });
+
+    if (
+      toolTagPositionsRef.current.length === 0 ||
+      toolTagPositionsRef.current.length !== nextPositions.length
+    ) {
+      const immediatePositions = nextPositions.map(({ left, top }) => ({ left, top }));
+      toolTagPositionsRef.current = immediatePositions;
+      setToolTagPositions(immediatePositions);
+      setArrowPaths(buildPaths(nextPositions));
+      return;
     }
-    relaxed.forEach((pos) => {
-      pos.left = Math.max(32, Math.min(width - 32, pos.left));
-      pos.top = Math.max(baseY - 6, pos.top);
-    });
-    setToolTagPositions(relaxed.map(({ left, top }) => ({ left, top })));
 
-    const computeArrows = () => {
-      const nodes = Array.from(container.querySelectorAll<HTMLElement>('.george-thinking-tool'));
-      if (nodes.length === 0) {
-        setArrowPaths([]);
-        return;
+    const prevPositions = toolTagPositionsRef.current.map((pos, index) => ({
+      left: pos.left,
+      top: pos.top,
+      angle: nextPositions[index]?.angle ?? 0
+    }));
+    const duration = 360;
+    const start = performance.now();
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const animate = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = easeOutCubic(t);
+      const blended = nextPositions.map((nextPos, index) => {
+        const prev = prevPositions[index] || nextPos;
+        return {
+          left: prev.left + (nextPos.left - prev.left) * eased,
+          top: prev.top + (nextPos.top - prev.top) * eased,
+          angle: nextPos.angle
+        };
+      });
+      const blendedPositions = blended.map(({ left, top }) => ({ left, top }));
+      toolTagPositionsRef.current = blendedPositions;
+      setToolTagPositions(blendedPositions);
+      setArrowPaths(buildPaths(blended));
+      if (t < 1) {
+        toolLayoutAnimRef.current = requestAnimationFrame(animate);
+      } else {
+        toolLayoutAnimRef.current = null;
       }
-      const paths = nodes.map((node, index) => {
-        const rect = node.getBoundingClientRect();
-        const end = getRectIntersection(startX + containerRect.left, startY + containerRect.top, rect);
-        const endX = end.x - containerRect.left;
-        const endY = end.y - containerRect.top;
-        const midX = (startX + endX) / 2 + Math.cos(index * 1.3) * 28;
-        const midY = (startY + endY) / 2 + Math.sin(index * 0.8) * 20;
-        const ctrl1X = startX + (midX - startX) * 0.5;
-        const ctrl1Y = startY + (midY - startY) * 0.5 - 10;
-        const ctrl2X = endX - (endX - midX) * 0.5;
-        const ctrl2Y = endY - (endY - midY) * 0.5 + 10;
-        return `M ${startX} ${startY} C ${ctrl1X} ${ctrl1Y}, ${ctrl2X} ${ctrl2Y}, ${endX} ${endY}`;
-      });
-      setArrowPaths(paths);
     };
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        computeArrows();
-      });
-    });
+    toolLayoutAnimRef.current = requestAnimationFrame(animate);
+    return () => {
+      if (toolLayoutAnimRef.current) {
+        cancelAnimationFrame(toolLayoutAnimRef.current);
+        toolLayoutAnimRef.current = null;
+      }
+    };
   }, [toolTags, statusSteps.length, activeStatusId]);
+
+  useEffect(() => {
+    if (!loading || !showTranscript) return;
+    const transcript = chatTranscriptRef.current;
+    if (!transcript) return;
+    transcript.scrollTop = transcript.scrollHeight;
+  }, [loading, showTranscript, messages]);
 
   useEffect(() => {
     if (!infoOpen) return;
@@ -806,22 +976,348 @@ export default function Home() {
     setIsDragActive(false);
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError('');
-    setOutput('');
-    setTiming(null);
-    setSteps({ started: true });
+  const handleZendeskNotFound = (message: string) => {
+    setZendeskNotFound(message);
+    setIsZendeskNotFoundClosing(false);
+    setMessages([]);
+    setSessionId(null);
+    setHasResponse(false);
     setStatusSteps([]);
     setActiveStatusId(null);
     setStatusDone(false);
-    setIsTraceOpen(false);
+    setSteps({ started: false });
+    setIsChatOverlayVisible(false);
+    try {
+      localStorage.removeItem(messagesStorageKey);
+      localStorage.removeItem(sessionStorageKey);
+    } catch {
+      // Ignore storage failures.
+    }
+  };
+  const handleAgentInterrupted = (message: string) => {
+    setAgentInterrupted(message);
+    setIsAgentInterruptedClosing(false);
+    setMessages([]);
+    setSessionId(null);
+    setHasResponse(false);
+    setStatusSteps([]);
+    setActiveStatusId(null);
+    setStatusDone(false);
+    setSteps({ started: false });
+    setIsChatOverlayVisible(false);
+    try {
+      localStorage.removeItem(messagesStorageKey);
+      localStorage.removeItem(sessionStorageKey);
+    } catch {
+      // Ignore storage failures.
+    }
+  };
+  const closeAgentInterrupted = () => {
+    if (!agentInterrupted || isAgentInterruptedClosing) return;
+    setIsAgentInterruptedClosing(true);
+    if (agentInterruptedCloseTimeout.current) {
+      window.clearTimeout(agentInterruptedCloseTimeout.current);
+    }
+    agentInterruptedCloseTimeout.current = window.setTimeout(() => {
+      setAgentInterrupted(null);
+      setIsAgentInterruptedClosing(false);
+      agentInterruptedCloseTimeout.current = null;
+    }, 180);
+  };
+  const removeLastExchange = () => {
+    setMessages((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      let removedAssistant = false;
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === 'assistant') {
+          next.splice(i, 1);
+          removedAssistant = true;
+          break;
+        }
+      }
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === 'user') {
+          next.splice(i, 1);
+          break;
+        }
+      }
+      return removedAssistant ? next : next;
+    });
+  };
+  const requestAbort = () => {
+    if (!loading) return;
+    setIsAbortConfirmClosing(false);
+    setShowAbortConfirm(true);
+  };
+  const cancelAbort = () => {
+    if (!showAbortConfirm || isAbortConfirmClosing) return;
+    setIsAbortConfirmClosing(true);
+    if (abortConfirmCloseTimeout.current) {
+      window.clearTimeout(abortConfirmCloseTimeout.current);
+    }
+    abortConfirmCloseTimeout.current = window.setTimeout(() => {
+      setShowAbortConfirm(false);
+      setIsAbortConfirmClosing(false);
+      abortConfirmCloseTimeout.current = null;
+    }, 180);
+  };
+  const confirmAbort = () => {
+    if (isAbortConfirmClosing) return;
+    setIsAbortConfirmClosing(true);
+    if (abortConfirmCloseTimeout.current) {
+      window.clearTimeout(abortConfirmCloseTimeout.current);
+    }
+    abortConfirmCloseTimeout.current = window.setTimeout(() => {
+      setShowAbortConfirm(false);
+      setIsAbortConfirmClosing(false);
+      abortConfirmCloseTimeout.current = null;
+    }, 180);
+    abortRequestedRef.current = true;
+    abortControllerRef.current?.abort();
+    if (runModeRef.current === 'initial') {
+      handleAgentInterrupted('Agent was interrupted. Please ask your question again.');
+    } else if (runModeRef.current === 'chat') {
+      removeLastExchange();
+      setStatusSteps([]);
+      setActiveStatusId(null);
+      setStatusDone(false);
+      setSteps((prev) => ({ ...prev, started: false, agentThinking: undefined }));
+      setIsChatOverlayVisible(false);
+    }
+  };
+  const requestNewChat = () => {
+    setIsNewChatConfirmClosing(false);
+    setShowNewChatConfirm(true);
+  };
+  const cancelNewChat = () => {
+    if (!showNewChatConfirm || isNewChatConfirmClosing) return;
+    setIsNewChatConfirmClosing(true);
+    if (newChatConfirmCloseTimeout.current) {
+      window.clearTimeout(newChatConfirmCloseTimeout.current);
+    }
+    newChatConfirmCloseTimeout.current = window.setTimeout(() => {
+      setShowNewChatConfirm(false);
+      setIsNewChatConfirmClosing(false);
+      newChatConfirmCloseTimeout.current = null;
+    }, 180);
+  };
+  const confirmNewChat = () => {
+    if (isNewChatConfirmClosing) return;
+    setIsNewChatConfirmClosing(true);
+    if (newChatConfirmCloseTimeout.current) {
+      window.clearTimeout(newChatConfirmCloseTimeout.current);
+    }
+    newChatConfirmCloseTimeout.current = window.setTimeout(() => {
+      setShowNewChatConfirm(false);
+      setIsNewChatConfirmClosing(false);
+      newChatConfirmCloseTimeout.current = null;
+    }, 180);
+    abortRequestedRef.current = true;
+    abortControllerRef.current?.abort();
+    resetConversation();
+  };
+  const closeZendeskNotFound = () => {
+    if (!zendeskNotFound || isZendeskNotFoundClosing) return;
+    setIsZendeskNotFoundClosing(true);
+    if (zendeskCloseTimeout.current) {
+      window.clearTimeout(zendeskCloseTimeout.current);
+    }
+    zendeskCloseTimeout.current = window.setTimeout(() => {
+      setZendeskNotFound(null);
+      setIsZendeskNotFoundClosing(false);
+      zendeskCloseTimeout.current = null;
+    }, 180);
+  };
+
+  const toggleMessageTrace = (index: number, anchor: HTMLElement | null) => {
+    if (!anchor) return;
+    if (metaOverlayCloseTimeout.current) {
+      window.clearTimeout(metaOverlayCloseTimeout.current);
+      metaOverlayCloseTimeout.current = null;
+    }
+    setIsMetaOverlayClosing(false);
+    const anchorRect = anchor.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const modalMaxHeight = Math.min(viewportHeight * 0.6, 420);
+    const spaceAbove = anchorRect.top - 24;
+    const spaceBelow = viewportHeight - anchorRect.bottom - 24;
+    const vertical =
+      spaceBelow < modalMaxHeight && spaceAbove >= spaceBelow ? 'above' : 'below';
+    setMessages((prev) => {
+      if (!prev[index]) return prev;
+      const next = [...prev];
+      const message = next[index];
+      const traceQueries = message.trace?.agentThinking?.queries ?? [];
+      const collapsedTools = traceQueries.reduce<Record<string, boolean>>((acc, q) => {
+        const label = q.tool.startsWith('vector_store_search_')
+          ? q.tool.replace('vector_store_search_', '')
+          : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+        acc[label] = true;
+        return acc;
+      }, {});
+      next[index] = { ...message, collapsedTools };
+      return next;
+    });
+    setMetaOverlay({ type: 'trace', messageIndex: index, anchorRect, align: 'right', vertical });
+  };
+
+  const toggleMessageSources = (index: number, anchor: HTMLElement | null) => {
+    if (!anchor) return;
+    if (metaOverlayCloseTimeout.current) {
+      window.clearTimeout(metaOverlayCloseTimeout.current);
+      metaOverlayCloseTimeout.current = null;
+    }
+    setIsMetaOverlayClosing(false);
+    const anchorRect = anchor.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const modalMaxHeight = Math.min(viewportHeight * 0.6, 420);
+    const spaceAbove = anchorRect.top - 24;
+    const spaceBelow = viewportHeight - anchorRect.bottom - 24;
+    const vertical =
+      spaceBelow < modalMaxHeight && spaceAbove >= spaceBelow ? 'above' : 'below';
+    setMetaOverlay({ type: 'sources', messageIndex: index, anchorRect, align: 'left', vertical });
+  };
+
+  const toggleMessageToolCollapse = (index: number, label: string) => {
+    setMessages((prev) => {
+      if (!prev[index]) return prev;
+      const next = [...prev];
+      const message = next[index];
+      const collapsedTools = { ...(message.collapsedTools ?? {}) };
+      collapsedTools[label] = !(collapsedTools[label] ?? false);
+      next[index] = { ...message, collapsedTools };
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    document.body.style.overflow = metaOverlay ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [metaOverlay]);
+
+  useEffect(() => {
+    return () => {
+      if (dropdownAnimTimeout.current) {
+        window.clearTimeout(dropdownAnimTimeout.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (zendeskCloseTimeout.current) {
+        window.clearTimeout(zendeskCloseTimeout.current);
+      }
+      if (agentInterruptedCloseTimeout.current) {
+        window.clearTimeout(agentInterruptedCloseTimeout.current);
+      }
+      if (abortConfirmCloseTimeout.current) {
+        window.clearTimeout(abortConfirmCloseTimeout.current);
+      }
+      if (newChatConfirmCloseTimeout.current) {
+        window.clearTimeout(newChatConfirmCloseTimeout.current);
+      }
+      if (metaOverlayCloseTimeout.current) {
+        window.clearTimeout(metaOverlayCloseTimeout.current);
+      }
+      if (chatAppearTimeout.current) {
+        window.clearTimeout(chatAppearTimeout.current);
+      }
+      if (returnHomeTimeout.current) {
+        window.clearTimeout(returnHomeTimeout.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const shouldHideHeader = showInitialLoader || isChatOverlayVisible;
+    document.body.classList.toggle('george-header-hidden', shouldHideHeader);
+    return () => {
+      document.body.classList.remove('george-header-hidden');
+    };
+  }, [showInitialLoader, isChatOverlayVisible]);
+
+  const closeMetaOverlay = () => {
+    if (!metaOverlay) return;
+    setIsMetaOverlayClosing(true);
+    if (metaOverlayCloseTimeout.current) {
+      window.clearTimeout(metaOverlayCloseTimeout.current);
+    }
+    metaOverlayCloseTimeout.current = window.setTimeout(() => {
+      setMetaOverlay(null);
+      setIsMetaOverlayClosing(false);
+      metaOverlayCloseTimeout.current = null;
+    }, 180);
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const isChatRequest = isChatMode;
+    runModeRef.current = isChatRequest ? 'chat' : 'initial';
+    abortRequestedRef.current = false;
+    setShowAbortConfirm(false);
+    traceBufferRef.current = {};
+    setInitialStreamStarted(false);
+    setError('');
+    setZendeskNotFound(null);
+    setAgentInterrupted(null);
+    setStatusSteps([]);
+    setActiveStatusId(null);
+    setStatusDone(false);
     setHasResponse(true);
     setLoading(true);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    if (isChatRequest) {
+      setSteps((prev) => ({ started: true, queryAnalysis: prev.queryAnalysis }));
+      setIsChatOverlayVisible(true);
+    } else {
+      setMessages([]);
+      setSessionId(null);
+      setSteps({ started: true });
+      setIsChatOverlayVisible(false);
+    }
 
     // Auto-detect ticket ID if input starts with #
-    const detectedIsZendeskTicket = input.trim().startsWith('#');
-    const cleanInput = detectedIsZendeskTicket ? input.trim().replace(/^#/, '') : input;
+    const canUseTicketMode = !isChatRequest;
+    const trimmedInput = input.trim();
+    const detectedIsZendeskTicket = canUseTicketMode && trimmedInput.startsWith('#');
+    const cleanInput = detectedIsZendeskTicket ? trimmedInput.replace(/^#/, '') : trimmedInput;
+    const userLabel = detectedIsZendeskTicket ? `Zendesk ticket #${cleanInput}` : trimmedInput;
+    const fallbackLabel = attachments.length > 0 ? 'Sent an attachment.' : '';
+    const messageLabel = userLabel || fallbackLabel;
+    if (!messageLabel && isChatRequest) {
+      setLoading(false);
+      setIsChatOverlayVisible(false);
+      return;
+    }
+    const shouldDeferMessages = detectedIsZendeskTicket && !isChatRequest;
+    if (!shouldDeferMessages) {
+      if (isChatRequest) {
+        setMessages((prev) => [
+          ...prev,
+          createUserMessage(messageLabel),
+          createAssistantMessage('')
+        ]);
+      } else {
+        setMessages([
+          createUserMessage(messageLabel),
+          createAssistantMessage('')
+        ]);
+      }
+    }
+    setInput('');
+    if (isChatRequest && attachments.length > 0) {
+      setAttachments([]);
+      setAttachmentError('');
+      setIsDragActive(false);
+      setRemovingAttachmentIds(new Set());
+    }
     let agentInputPayload: AgentInputPayload | null = null;
 
     const startedAt = performance.now();
@@ -832,7 +1328,7 @@ export default function Home() {
         router.replace('/login');
         return;
       }
-      if (detectedIsZendeskTicket) {
+      if (!isChatRequest && detectedIsZendeskTicket) {
         setStatusSteps([{ id: 'fetch_ticket', label: 'Fetching Zendesk ticket' }]);
         setActiveStatusId('fetch_ticket');
         const ticketResponse = await fetch(ticketFetchEndpoint, {
@@ -841,7 +1337,8 @@ export default function Home() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${accessToken}`
           },
-          body: JSON.stringify({ ticketId: Number(cleanInput) })
+          body: JSON.stringify({ ticketId: Number(cleanInput) }),
+          signal: abortController.signal
         });
         let ticketFinalEvent: AgentInputPayload | null = null;
         await consumeSseResponse(ticketResponse, (eventType, data) => {
@@ -860,7 +1357,12 @@ export default function Home() {
           }
           if (eventType === 'error') {
             const message = String(data?.message || 'Ticket fetch failed');
-            throw new Error(message);
+            const code = typeof data?.code === 'string' ? data.code : '';
+            const err = new Error(message);
+            if (code) {
+              (err as { code?: string }).code = code;
+            }
+            throw err;
           }
         });
         if (ticketResponse.status === 401) {
@@ -880,15 +1382,28 @@ export default function Home() {
               isZendesk: true
             }
           }));
+          traceBufferRef.current = {
+            ...traceBufferRef.current,
+            queryAnalysis: {
+              metadata: ticketMetadata as Record<string, unknown>,
+              isZendesk: true
+            }
+          };
         }
         agentInputPayload = ticketOutput;
+        if (shouldDeferMessages) {
+          setMessages([
+            createUserMessage(messageLabel),
+            createAssistantMessage('')
+          ]);
+        }
         setStatusSteps((prev) => {
           const exists = prev.some((step) => step.id === 'start');
           if (exists) return prev;
           return [...prev, { id: 'start', label: 'Starting agent run' }];
         });
         setActiveStatusId('start');
-      } else {
+      } else if (!isChatRequest) {
         setStatusSteps([{ id: 'query_analysis', label: 'Running query analysis' }]);
         setActiveStatusId('query_analysis');
         if (attachments.length > 0) {
@@ -921,7 +1436,8 @@ export default function Home() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${accessToken}`
           },
-          body: JSON.stringify(queryPayload)
+          body: JSON.stringify(queryPayload),
+          signal: abortController.signal
         });
         let analysisFinalEvent: AgentInputPayload | null = null;
         await consumeSseResponse(analysisResponse, (eventType, data) => {
@@ -961,6 +1477,13 @@ export default function Home() {
               isZendesk: false
             }
           }));
+          traceBufferRef.current = {
+            ...traceBufferRef.current,
+            queryAnalysis: {
+              metadata: analysisMetadata as Record<string, unknown>,
+              isZendesk: false
+            }
+          };
         }
         if (analysisOutput && attachments.length > 0) {
           const attachmentsPayload = attachments.map((attachment) => attachment.dataUrl);
@@ -1005,8 +1528,13 @@ export default function Home() {
         body: JSON.stringify({
           input: cleanInput,
           isZendeskTicket: detectedIsZendeskTicket,
-          agentInput: agentInputPayload ?? undefined
-        })
+          agentInput: agentInputPayload ?? undefined,
+          sessionId: sessionId || undefined,
+          attachments: isChatRequest
+            ? attachments.map((attachment) => attachment.dataUrl)
+            : undefined
+        }),
+        signal: abortController.signal
       });
       const roundTripMs = Math.round(performance.now() - startedAt);
 
@@ -1016,10 +1544,6 @@ export default function Home() {
       }
       if (!response.body) {
         const data = await response.json().catch(() => ({}));
-        const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
-        const serverMs =
-          typeof meta?.server_ms === 'number' ? Math.round(meta.server_ms) : undefined;
-        setTiming({ round_trip_ms: roundTripMs, server_ms: serverMs });
         throw new Error(data.error || `Request failed with ${response.status}`);
       }
 
@@ -1028,6 +1552,42 @@ export default function Home() {
       let buffer = '';
       let rawText = '';
       let sawEvent = false;
+      const upsertTraceQuery = (entry: {
+        callId: string;
+        tool: string;
+        query?: string;
+        filters?: unknown;
+        sources?: string[];
+        output?: unknown;
+      }) => {
+        const trace = traceBufferRef.current || {};
+        const queries = trace.agentThinking?.queries ? [...trace.agentThinking.queries] : [];
+        const existingIndex = queries.findIndex((q) => q.callId === entry.callId);
+        if (existingIndex >= 0) {
+          const existing = queries[existingIndex];
+          queries[existingIndex] = {
+            ...existing,
+            tool: entry.tool || existing.tool,
+            query: entry.query ?? existing.query,
+            filters: entry.filters ?? existing.filters,
+            sources: entry.sources ?? existing.sources,
+            output: entry.output ?? existing.output
+          };
+        } else {
+          queries.push({
+            callId: entry.callId,
+            tool: entry.tool,
+            query: entry.query ?? '',
+            filters: entry.filters,
+            sources: entry.sources ?? [],
+            output: entry.output
+          });
+        }
+        traceBufferRef.current = {
+          ...trace,
+          agentThinking: { queries }
+        };
+      };
 
       const handleEvent = (eventType: string, data: Record<string, unknown>) => {
         sawEvent = true;
@@ -1037,6 +1597,11 @@ export default function Home() {
           const eventData = data?.data as Record<string, unknown> | undefined;
           const normalizedStage = stage.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
           const label = message.trim() ? message : normalizedStage;
+
+          if (stage === 'timing') {
+            console.log('[timing]', { message, data: eventData });
+            return;
+          }
 
           if (stage === 'attachments_error') {
             console.warn('[attachments][analysis_error_detail]', eventData);
@@ -1050,12 +1615,20 @@ export default function Home() {
               ...prev,
               queryAnalysis: { metadata: eventData.metadata as Record<string, unknown>, isZendesk: false }
             }));
+            traceBufferRef.current = {
+              ...traceBufferRef.current,
+              queryAnalysis: { metadata: eventData.metadata as Record<string, unknown>, isZendesk: false }
+            };
           } else if (stage === 'fetch_ticket' && eventData?.metadata) {
             console.log('[metadata][fetch_ticket]', eventData.metadata);
             setSteps((prev) => ({
               ...prev,
               queryAnalysis: { metadata: eventData.metadata as Record<string, unknown>, isZendesk: true }
             }));
+            traceBufferRef.current = {
+              ...traceBufferRef.current,
+              queryAnalysis: { metadata: eventData.metadata as Record<string, unknown>, isZendesk: true }
+            };
           }
           
           // Handle attachments - accumulate totals across all attachment analysis events
@@ -1076,6 +1649,15 @@ export default function Home() {
                   }
                 };
               });
+              const existing = traceBufferRef.current.attachments || { total: 0, cached: 0, analyzed: 0 };
+              traceBufferRef.current = {
+                ...traceBufferRef.current,
+                attachments: {
+                  total: existing.total + total,
+                  cached: existing.cached + cached,
+                  analyzed: existing.analyzed + analyzed
+                }
+              };
             }
           }
 
@@ -1099,7 +1681,26 @@ export default function Home() {
         if (eventType === 'agent_text') {
           const text = String(data?.text || '');
           if (text) {
-            setOutput((prev) => prev + text);
+            if (!isChatRequest) {
+              setInitialStreamStarted(true);
+            }
+            if (isChatRequest) {
+              setIsChatOverlayVisible(false);
+            }
+            setMessages((prev) => {
+              if (prev.length === 0) {
+                return [createAssistantMessage(text)];
+              }
+              const next = [...prev];
+              for (let i = next.length - 1; i >= 0; i -= 1) {
+                if (next[i].role === 'assistant') {
+                  next[i] = { ...next[i], content: next[i].content + text };
+                  return next;
+                }
+              }
+              next.push(createAssistantMessage(text));
+              return next;
+            });
           }
           return;
         }
@@ -1138,6 +1739,7 @@ export default function Home() {
                       }
                     };
                   });
+                  upsertTraceQuery({ callId, tool: toolName, query, filters, sources: [] });
                 }
               } else {
                 // Handle other tools (like SQL agent)
@@ -1187,6 +1789,7 @@ export default function Home() {
                     }
                   };
                 });
+                upsertTraceQuery({ callId, tool: toolName, query, filters: undefined, sources: [] });
               }
             }
           }
@@ -1250,42 +1853,75 @@ export default function Home() {
                   }
                 };
               });
+              upsertTraceQuery({ callId, tool: toolName, sources, output: outputDisplay });
             }
           }
           return;
         }
         if (eventType === 'done') {
           const outputText = String(data?.output || '');
-          if (outputText) {
-            setOutput((prev) => (prev ? prev : outputText));
-            if (outputText.includes('Error analyzing the image')) {
-              console.warn('[attachments][analysis_error]', {
-                outputText,
-                attachmentCount: attachments.length
-              });
-            }
+          if (typeof data?.sessionId === 'string' && data.sessionId.trim()) {
+            setSessionId(data.sessionId);
           }
           const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
           const serverMs =
             typeof meta?.server_ms === 'number' ? Math.round(meta.server_ms) : undefined;
           const finalRoundTripMs = Math.round(performance.now() - startedAt);
-          setTiming({ round_trip_ms: finalRoundTripMs, server_ms: serverMs });
+          const traceSnapshot = snapshotTraceData(traceBufferRef.current);
+          const sourcesForTrace = buildSourcesFromTrace(traceSnapshot);
+          const timingInfo: TimingInfo = { round_trip_ms: finalRoundTripMs, server_ms: serverMs };
+          setMessages((prev) => {
+            if (prev.length === 0) {
+              const fresh = createAssistantMessage(outputText);
+              return [
+                {
+                  ...fresh,
+                  trace: traceSnapshot,
+                  sources: sourcesForTrace.length > 0 ? sourcesForTrace : undefined,
+                  timing: timingInfo
+                }
+              ];
+            }
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i -= 1) {
+              if (next[i].role === 'assistant') {
+                const content = outputText && !next[i].content ? outputText : next[i].content;
+                next[i] = {
+                  ...next[i],
+                  content,
+                  trace: traceSnapshot,
+                  sources: sourcesForTrace.length > 0 ? sourcesForTrace : undefined,
+                  timing: timingInfo
+                };
+                return next;
+              }
+            }
+            const fallback = createAssistantMessage(outputText);
+            fallback.trace = traceSnapshot;
+            fallback.sources = sourcesForTrace.length > 0 ? sourcesForTrace : undefined;
+            fallback.timing = timingInfo;
+            next.push(fallback);
+            return next;
+          });
+          if (outputText && outputText.includes('Error analyzing the image')) {
+            console.warn('[attachments][analysis_error]', {
+              outputText,
+              attachmentCount: attachments.length
+            });
+          }
           setLoading(false);
           setStatusDone(true);
           setActiveStatusId(null);
+          setIsChatOverlayVisible(false);
           return;
         }
         if (eventType === 'error') {
           const message = String(data?.message || 'Unknown error');
           setError(message);
-          const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
-          const serverMs =
-            typeof meta?.server_ms === 'number' ? Math.round(meta.server_ms) : undefined;
-          const finalRoundTripMs = Math.round(performance.now() - startedAt);
-          setTiming({ round_trip_ms: finalRoundTripMs, server_ms: serverMs });
           setLoading(false);
           setStatusDone(true);
           setActiveStatusId(null);
+          setIsChatOverlayVisible(false);
         }
       };
 
@@ -1340,10 +1976,47 @@ export default function Home() {
         if (!looksLikeSSE) {
           try {
             const parsed = JSON.parse(rawText);
-            setOutput(parsed.output || '');
+            if (typeof parsed?.sessionId === 'string' && parsed.sessionId.trim()) {
+              setSessionId(parsed.sessionId);
+            }
             const serverMs =
               typeof parsed?.meta?.server_ms === 'number' ? Math.round(parsed.meta.server_ms) : undefined;
-            setTiming({ round_trip_ms: roundTripMs, server_ms: serverMs });
+            const traceSnapshot = snapshotTraceData(traceBufferRef.current);
+            const sourcesForTrace = buildSourcesFromTrace(traceSnapshot);
+            const timingInfo: TimingInfo = { round_trip_ms: roundTripMs, server_ms: serverMs };
+            const outputText = parsed.output ? String(parsed.output) : '';
+            setMessages((prev) => {
+              if (prev.length === 0) {
+                const fresh = createAssistantMessage(outputText);
+                return [
+                  {
+                    ...fresh,
+                    trace: traceSnapshot,
+                    sources: sourcesForTrace.length > 0 ? sourcesForTrace : undefined,
+                    timing: timingInfo
+                  }
+                ];
+              }
+              const next = [...prev];
+              for (let i = next.length - 1; i >= 0; i -= 1) {
+                if (next[i].role === 'assistant') {
+                  next[i] = {
+                    ...next[i],
+                    content: outputText || next[i].content,
+                    trace: traceSnapshot,
+                    sources: sourcesForTrace.length > 0 ? sourcesForTrace : undefined,
+                    timing: timingInfo
+                  };
+                  return next;
+                }
+              }
+              const fallback = createAssistantMessage(outputText);
+              fallback.trace = traceSnapshot;
+              fallback.sources = sourcesForTrace.length > 0 ? sourcesForTrace : undefined;
+              fallback.timing = timingInfo;
+              next.push(fallback);
+              return next;
+            });
             if (!response.ok) {
               throw new Error(parsed.error || `Request failed with ${response.status}`);
             }
@@ -1358,10 +2031,20 @@ export default function Home() {
         }
       }
     } catch (err) {
+      if (abortRequestedRef.current || (err instanceof DOMException && err.name === 'AbortError')) {
+        return;
+      }
       const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(message);
+      const code =
+        err && typeof err === 'object' && 'code' in err ? (err as { code?: string }).code : '';
+      if (code === 'ZENDESK_TICKET_NOT_FOUND') {
+        handleZendeskNotFound(message || 'Zendesk ticket not found.');
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
+      setIsChatOverlayVisible(false);
     }
   };
 
@@ -1369,7 +2052,7 @@ export default function Home() {
     <div className="george-app">
       {/* Main Content */}
       {!hasResponse ? (
-        <main className="george-main">
+        <main className={`george-main${isReturningHome ? ' is-returning' : ''}`}>
           <div className="george-home-shell">
             <div className="george-hero">
               <div className="george-character-container">
@@ -1559,19 +2242,35 @@ export default function Home() {
                 <div className="george-inline-fields">
                   <div className="george-inline-field">
                     {userEmailTag ? (
-                      <button
-                        type="button"
+                      <div
                         className="george-inline-tag george-inline-tag-email"
-                        onClick={() => {
-                          setUserEmailDraft(userEmailTag);
-                          setUserEmailTag('');
-                        }}
-                        aria-label="Edit email"
+                        role="status"
+                        aria-label="Email selected"
                       >
-                        {userEmailTag}
-                      </button>
+                        <span>{userEmailTag}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="george-inline-tag-remove"
+                          aria-label="Clear email"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setUserEmailDraft('');
+                            setUserEmailTag('');
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setUserEmailDraft('');
+                              setUserEmailTag('');
+                            }
+                          }}
+                        >
+                          ×
+                        </span>
+                      </div>
                     ) : (
-                        <input
+                      <input
                           type="text"
                           className="george-inline-input"
                           placeholder="email"
@@ -1593,17 +2292,33 @@ export default function Home() {
                   </div>
                   <div className="george-inline-field">
                     {softwareTag ? (
-                      <button
-                        type="button"
+                      <div
                         className="george-inline-tag george-inline-tag-muted"
-                        onClick={() => {
-                          setSoftwareDraft(softwareTag);
-                          setSoftwareTag('');
-                        }}
-                          aria-label="Edit software"
+                        role="status"
+                        aria-label="Software selected"
                       >
-                        {softwareTag}
-                      </button>
+                        <span>{softwareTag}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="george-inline-tag-remove"
+                          aria-label="Clear software"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSoftwareDraft('');
+                            setSoftwareTag('');
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSoftwareDraft('');
+                              setSoftwareTag('');
+                            }
+                          }}
+                        >
+                          ×
+                        </span>
+                      </div>
                     ) : (
                         <div
                           className="george-inline-select"
@@ -1616,13 +2331,13 @@ export default function Home() {
                             placeholder="software"
                             size={Math.max(softwareDraft.length, 9)}
                             value={softwareDraft}
-                            onFocus={() => setOpenDropdown('software')}
-                            onClick={() => setOpenDropdown('software')}
+                            onFocus={() => openDropdownWith('software')}
+                            onClick={() => openDropdownWith('software')}
                             onChange={(event) => {
                               const nextValue = event.target.value;
                               setSoftwareDraft(nextValue);
                               if (openDropdown !== 'software') {
-                                setOpenDropdown('software');
+                                openDropdownWith('software');
                               }
                             }}
                             onKeyDown={(event) => {
@@ -1630,7 +2345,7 @@ export default function Home() {
                                 event.preventDefault();
                               }
                               if (event.key === 'Escape') {
-                                setOpenDropdown(null);
+                                closeDropdown();
                               }
                             }}
                             disabled={loading}
@@ -1639,9 +2354,13 @@ export default function Home() {
                             type="button"
                             className="george-inline-select-toggle"
                             aria-label="Toggle software list"
-                            onClick={() =>
-                              setOpenDropdown((prev) => (prev === 'software' ? null : 'software'))
-                            }
+                            onClick={() => {
+                              if (openDropdown === 'software') {
+                                closeDropdown();
+                              } else {
+                                openDropdownWith('software');
+                              }
+                            }}
                             disabled={loading}
                           >
                             <span aria-hidden="true">⌄</span>
@@ -1651,17 +2370,33 @@ export default function Home() {
                   </div>
                   <div className="george-inline-field">
                     {softwareVersionTag ? (
-                      <button
-                        type="button"
+                      <div
                         className="george-inline-tag george-inline-tag-muted"
-                        onClick={() => {
-                          setSoftwareVersionDraft(softwareVersionTag);
-                          setSoftwareVersionTag('');
-                        }}
-                          aria-label="Edit software version"
+                        role="status"
+                        aria-label="Software version selected"
                       >
-                        {softwareVersionTag}
-                      </button>
+                        <span>{softwareVersionTag}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="george-inline-tag-remove"
+                          aria-label="Clear software version"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSoftwareVersionDraft('');
+                            setSoftwareVersionTag('');
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSoftwareVersionDraft('');
+                              setSoftwareVersionTag('');
+                            }
+                          }}
+                        >
+                          ×
+                        </span>
+                      </div>
                     ) : (
                         <div
                           className="george-inline-select"
@@ -1679,14 +2414,14 @@ export default function Home() {
                                 flashInlineError('Please choose the software first.');
                                 return;
                               }
-                              setOpenDropdown('softwareVersion');
+                              openDropdownWith('softwareVersion');
                             }}
                             onClick={() => {
                               if (!softwareTag) {
                                 flashInlineError('Please choose the software first.');
                                 return;
                               }
-                              setOpenDropdown('softwareVersion');
+                              openDropdownWith('softwareVersion');
                             }}
                             onChange={(event) => {
                               if (!softwareTag) {
@@ -1696,7 +2431,7 @@ export default function Home() {
                               const nextValue = event.target.value;
                               setSoftwareVersionDraft(nextValue);
                               if (openDropdown !== 'softwareVersion') {
-                                setOpenDropdown('softwareVersion');
+                                openDropdownWith('softwareVersion');
                               }
                             }}
                             onKeyDown={(event) => {
@@ -1704,7 +2439,7 @@ export default function Home() {
                                 event.preventDefault();
                               }
                               if (event.key === 'Escape') {
-                                setOpenDropdown(null);
+                                closeDropdown();
                               }
                             }}
                             disabled={loading}
@@ -1718,9 +2453,11 @@ export default function Home() {
                                 flashInlineError('Please choose the software first.');
                                 return;
                               }
-                              setOpenDropdown((prev) =>
-                                prev === 'softwareVersion' ? null : 'softwareVersion'
-                              );
+                              if (openDropdown === 'softwareVersion') {
+                                closeDropdown();
+                              } else {
+                                openDropdownWith('softwareVersion');
+                              }
                             }}
                             disabled={loading}
                           >
@@ -1731,17 +2468,33 @@ export default function Home() {
                   </div>
                   <div className="george-inline-field">
                     {osTag ? (
-                      <button
-                        type="button"
+                      <div
                         className="george-inline-tag george-inline-tag-muted"
-                        onClick={() => {
-                          setOsDraft(osTag);
-                          setOsTag('');
-                        }}
-                          aria-label="Edit OS"
+                        role="status"
+                        aria-label="OS selected"
                       >
-                        {osTag}
-                      </button>
+                        <span>{osTag}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="george-inline-tag-remove"
+                          aria-label="Clear OS"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOsDraft('');
+                            setOsTag('');
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setOsDraft('');
+                              setOsTag('');
+                            }
+                          }}
+                        >
+                          ×
+                        </span>
+                      </div>
                     ) : (
                         <div
                           className="george-inline-select"
@@ -1754,13 +2507,13 @@ export default function Home() {
                             placeholder="os"
                             size={Math.max(osDraft.length, 3)}
                             value={osDraft}
-                            onFocus={() => setOpenDropdown('os')}
-                            onClick={() => setOpenDropdown('os')}
+                            onFocus={() => openDropdownWith('os')}
+                            onClick={() => openDropdownWith('os')}
                             onChange={(event) => {
                               const nextValue = event.target.value;
                               setOsDraft(nextValue);
                               if (openDropdown !== 'os') {
-                                setOpenDropdown('os');
+                                openDropdownWith('os');
                               }
                             }}
                             onKeyDown={(event) => {
@@ -1768,7 +2521,7 @@ export default function Home() {
                                 event.preventDefault();
                               }
                               if (event.key === 'Escape') {
-                                setOpenDropdown(null);
+                                closeDropdown();
                               }
                             }}
                             disabled={loading}
@@ -1777,9 +2530,13 @@ export default function Home() {
                             type="button"
                             className="george-inline-select-toggle"
                             aria-label="Toggle OS list"
-                            onClick={() =>
-                              setOpenDropdown((prev) => (prev === 'os' ? null : 'os'))
-                            }
+                            onClick={() => {
+                              if (openDropdown === 'os') {
+                                closeDropdown();
+                              } else {
+                                openDropdownWith('os');
+                              }
+                            }}
                             disabled={loading}
                           >
                             <span aria-hidden="true">⌄</span>
@@ -1789,17 +2546,33 @@ export default function Home() {
                   </div>
                   <div className="george-inline-field">
                     {osVersionTag ? (
-                      <button
-                        type="button"
+                      <div
                         className="george-inline-tag george-inline-tag-muted"
-                        onClick={() => {
-                          setOsVersionDraft(osVersionTag);
-                          setOsVersionTag('');
-                        }}
-                        aria-label="Edit OS version"
+                        role="status"
+                        aria-label="OS version selected"
                       >
-                        {osVersionTag}
-                      </button>
+                        <span>{osVersionTag}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="george-inline-tag-remove"
+                          aria-label="Clear OS version"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOsVersionDraft('');
+                            setOsVersionTag('');
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setOsVersionDraft('');
+                              setOsVersionTag('');
+                            }
+                          }}
+                        >
+                          ×
+                        </span>
+                      </div>
                     ) : (
                         <input
                           type="text"
@@ -1807,7 +2580,25 @@ export default function Home() {
                           placeholder="os version"
                           size={Math.max(osVersionDraft.length, 11)}
                           value={osVersionDraft}
-                          onChange={(event) => setOsVersionDraft(event.target.value)}
+                          onFocus={() => {
+                            if (!osTag) {
+                              flashInlineError('Please select the OS first.');
+                              return;
+                            }
+                          }}
+                          onClick={() => {
+                            if (!osTag) {
+                              flashInlineError('Please select the OS first.');
+                              return;
+                            }
+                          }}
+                          onChange={(event) => {
+                            if (!osTag) {
+                              flashInlineError('Please select the OS first.');
+                              return;
+                            }
+                            setOsVersionDraft(event.target.value);
+                          }}
                           onKeyDown={(event) => {
                           if (event.key === 'Enter') {
                             event.preventDefault();
@@ -1829,7 +2620,7 @@ export default function Home() {
           {dropdownReady && openDropdown && dropdownRect
             ? createPortal(
                 <div
-                  className="george-inline-popover george-inline-popover-portal"
+                  className={`george-inline-popover george-inline-popover-portal${dropdownPhase === 'closing' ? ' is-closing' : ''}`}
                   role="listbox"
                   ref={dropdownPortalRef}
                   style={{
@@ -1853,7 +2644,7 @@ export default function Home() {
                             onClick={() => {
                               setSoftwareTag(option);
                               setSoftwareDraft('');
-                              setOpenDropdown(null);
+                              closeDropdown();
                             }}
                           >
                             {option}
@@ -1873,7 +2664,7 @@ export default function Home() {
                             onClick={() => {
                               setSoftwareVersionTag(option);
                               setSoftwareVersionDraft('');
-                              setOpenDropdown(null);
+                              closeDropdown();
                             }}
                           >
                             {option}
@@ -1893,7 +2684,7 @@ export default function Home() {
                             onClick={() => {
                               setOsTag(option);
                               setOsDraft('');
-                              setOpenDropdown(null);
+                              closeDropdown();
                             }}
                           >
                             {option}
@@ -1908,14 +2699,21 @@ export default function Home() {
       ) : (
         <main className="george-main george-main-with-response">
           {error ? <p className="george-error">{error}</p> : null}
-        {steps.started ? (
+        {showInitialLoader ? (
             <section className="george-output">
-              {!statusDone && output.length === 0 ? (
-                <div className={`george-loading is-entering${output ? ' is-exiting' : ''}`}>
+                <div className="george-loading is-entering">
                   <div className="george-loading-logo">
                     <img src="/george-logo.png" alt="George thinking" />
                     <span className="george-loading-glow" aria-hidden="true" />
                   </div>
+                  <button
+                    type="button"
+                    className="george-loading-abort"
+                    onClick={requestAbort}
+                    aria-label="Abort run"
+                  >
+                    <span className="george-loading-abort-icon" aria-hidden="true" />
+                  </button>
                   <div className="george-loading-steps">
                     {(statusSteps.length > 0
                       ? statusSteps
@@ -1948,10 +2746,10 @@ export default function Home() {
                     {steps.agentThinking && toolTags.length > 0 ? (
                       <div className="george-thinking-branches" ref={branchesRef}>
                         <svg className="george-thinking-arrows" aria-hidden="true">
-                          {arrowPaths.map((path, index) => (
+                          {toolTags.map((label, index) => (
                             <path
-                              key={`arrow-${index}`}
-                              d={path}
+                              key={`arrow-${label}`}
+                              d={arrowPaths[index] || ''}
                               style={{ animationDelay: `${index * 0.12}s` }}
                             />
                           ))}
@@ -1959,7 +2757,7 @@ export default function Home() {
                         <div className="george-thinking-tools" aria-label="Active tools">
                           {toolTags.map((label, index) => (
                             <div
-                              key={`${label}-${index}`}
+                              key={label}
                               className="george-thinking-tool"
                               style={{
                                 animationDelay: `${index * 0.12}s`,
@@ -1975,61 +2773,326 @@ export default function Home() {
                     ) : null}
                   </div>
                 </div>
-              ) : null}
           </section>
         ) : null}
-        {output ? (
-            <section className="george-output">
-            <div className={`george-response${logoToResponse ? ' is-streaming' : ''}`}>
-              <div className="george-response-header">
-                <img
-                  src="/george-logo.png"
-                  alt="George"
-                  className={`george-response-logo${logoToResponse ? ' is-entered' : ''}`}
-                />
-                <div
-                  className="markdown"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(output) }}
-                />
-              </div>
-            </div>
-            {sources.length > 0 ? (
-              <div className="george-sources">
-                <p className="george-sources-title">Sources</p>
-                <div className="george-sources-list">
-                  {sources.map((url, index) => (
-                    <a
-                      key={`${url}-${index}`}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="george-source-item"
+        <section className="george-output">
+          <div className={`george-chat${showTranscript ? ' is-visible' : ''}`}>
+              <div className="george-chat-transcript" ref={chatTranscriptRef}>
+                {messages.map((message, index) => {
+                  const trace = message.trace;
+                  const traceQueries = trace?.agentThinking?.queries ?? [];
+                  const hasSources = Boolean(message.sources && message.sources.length > 0);
+                  const hasTrace = Boolean(message.timing || traceQueries.length > 0 || trace?.queryAnalysis);
+                  const groupedTools = traceQueries.reduce<Record<string, typeof traceQueries>>((groups, q) => {
+                    const label = q.tool.startsWith('vector_store_search_')
+                      ? q.tool.replace('vector_store_search_', '')
+                      : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+                    if (!groups[label]) groups[label] = [];
+                    groups[label].push(q);
+                    return groups;
+                  }, {});
+                  return (
+                    <div
+                      key={`${message.role}-${index}`}
+                      className={`george-chat-message ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}
                     >
-                      <span>{formatSourceLabel(url)}</span>
-                      <span className="george-source-icon" aria-hidden="true">↗</span>
-                    </a>
-                  ))}
+                      <div className="george-chat-avatar" aria-hidden="true">
+                        {message.role === 'assistant' ? (
+                          <img src="/george-logo.png" alt="" />
+                        ) : (
+                          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path
+                              d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        )}
+                      </div>
+                      <div className="george-chat-bubble">
+                        {message.role === 'assistant' ? (
+                          <div
+                            className="markdown"
+                            dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(message.content) }}
+                          />
+                        ) : (
+                          <div
+                            className="george-chat-text"
+                            dangerouslySetInnerHTML={{
+                              __html: renderInlineMarkdown(escapeHtml(message.content)).replace(/\n/g, '<br />')
+                            }}
+                          />
+                        )}
+                      </div>
+                      {message.role === 'assistant' && (hasSources || hasTrace) ? (
+                        <div className="george-chat-meta">
+                          {hasSources ? (
+                            <button
+                              type="button"
+                              className="george-trace-toggle george-chat-meta-left"
+                              onClick={(event) => toggleMessageSources(index, event.currentTarget)}
+                            >
+                              Sources
+                            </button>
+                          ) : <span />}
+                          {hasTrace ? (
+                            <button
+                              type="button"
+                              className="george-trace-toggle george-chat-meta-right"
+                              onClick={(event) => toggleMessageTrace(index, event.currentTarget)}
+                            >
+                              Trace · {typeof message.timing?.server_ms === 'number' ? `${(message.timing.server_ms / 1000).toFixed(2)}s` : 'n/a'}
+                            </button>
+                          ) : <span />}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="george-input-container george-chat-input">
+                <div className="george-input-shell">
+                  {attachments.length > 0 || attachmentError ? (
+                    <div className="george-attachments-panel">
+                      {attachments.length > 0 ? (
+                        <div className="george-attachments">
+                          {attachments.map((attachment) => (
+                            <div
+                              key={attachment.id}
+                              className={`george-attachment${
+                                removingAttachmentIds.has(attachment.id) ? ' is-removing' : ''
+                              }`}
+                            >
+                              <img
+                                src={attachment.dataUrl}
+                                alt={attachment.name}
+                                className="george-attachment-thumb"
+                              />
+                              <button
+                                type="button"
+                                className="george-attachment-remove"
+                                onClick={() => removeAttachment(attachment.id)}
+                                aria-label={`Remove ${attachment.name}`}
+                              >
+                                x
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {attachmentError ? (
+                        <div className="george-attachments-error">{attachmentError}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <form
+                    className={`george-input-form${isDragActive ? ' is-dragging' : ''}`}
+                    onSubmit={handleSubmit}
+                    onDragOver={handleAttachmentDragOver}
+                    onDragLeave={handleAttachmentDragLeave}
+                    onDrop={handleAttachmentDrop}
+                  >
+                    <div className="george-input-wrapper">
+                      <input
+                        type="text"
+                        className="george-input"
+                        placeholder="Send a message"
+                        value={input}
+                        onChange={(event) => {
+                          setInput(event.target.value);
+                        }}
+                        disabled={loading}
+                      />
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple={attachmentsRemaining > 1}
+                      className="george-input-file"
+                      onChange={handleAttachmentChange}
+                      disabled={attachmentsDisabled}
+                    />
+                    <button
+                      type="button"
+                      className="george-input-attach"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={attachmentsDisabled}
+                      aria-label={
+                        attachmentsRemaining === 0
+                          ? `Max allowed attachments: ${maxAttachments}`
+                          : 'Add attachments'
+                      }
+                      title={attachmentsRemaining === 0 ? `Max allowed attachments: ${maxAttachments}` : undefined}
+                    >
+                      <span aria-hidden="true">+</span>
+                    </button>
+                    <button type="submit" className="george-input-send" disabled={loading} aria-label="Send">
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 10L18 2L12 18L10 10L2 10Z" fill="currentColor"/>
+                      </svg>
+                    </button>
+                  </form>
                 </div>
               </div>
-            ) : null}
-            {statusDone ? (
+              {isChatOverlayVisible ? (
+                <div className="george-chat-overlay">
+                  <div className="george-loading is-entering">
+                    <div className="george-loading-logo">
+                      <img src="/george-logo.png" alt="George thinking" />
+                      <span className="george-loading-glow" aria-hidden="true" />
+                    </div>
+                    <button
+                      type="button"
+                      className="george-loading-abort"
+                      onClick={requestAbort}
+                      aria-label="Abort run"
+                    >
+                      <span className="george-loading-abort-icon" aria-hidden="true" />
+                    </button>
+                    <div className="george-loading-steps">
+                      {(statusSteps.length > 0
+                        ? statusSteps
+                        : [{ id: 'start', label: 'Starting agent run', forceActive: true }]
+                      ).map((step, index) => {
+                        const isActive = 'forceActive' in step ? true : index === currentStatusIndex && !statusDone;
+                        const isComplete = statusDone || index < currentStatusIndex;
+                        const isThinkingStep = /thinking/i.test(step.label) || /thinking/i.test(step.id);
+                        return (
+                          <div
+                            key={`overlay-${step.id}`}
+                            ref={(node) => {
+                              stepRefs.current[step.id] = node;
+                            }}
+                            className={`george-loading-step${isActive ? ' is-active' : ''}${isComplete ? ' is-complete' : ''}`}
+                          >
+                            <span className="george-loading-dot" aria-hidden="true" />
+                            <span className="george-loading-text">
+                              {step.label}
+                              {isThinkingStep ? <span ref={thinkingRef} className="george-thinking-anchor" /> : null}
+                            </span>
+                            {isComplete ? (
+                              <svg className="george-loading-check" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {steps.agentThinking && toolTags.length > 0 ? (
+                        <div className="george-thinking-branches" ref={branchesRef}>
+                          <svg className="george-thinking-arrows" aria-hidden="true">
+                            {toolTags.map((label, index) => (
+                              <path
+                                key={`overlay-arrow-${label}`}
+                                d={arrowPaths[index] || ''}
+                                style={{ animationDelay: `${index * 0.12}s` }}
+                              />
+                            ))}
+                          </svg>
+                          <div className="george-thinking-tools" aria-label="Active tools">
+                            {toolTags.map((label, index) => (
+                              <div
+                                key={`overlay-tool-${label}`}
+                                className="george-thinking-tool"
+                                style={{
+                                  animationDelay: `${index * 0.12}s`,
+                                  left: `${toolTagPositions[index]?.left ?? 0}px`,
+                                  top: `${toolTagPositions[index]?.top ?? 0}px`
+                                }}
+                              >
+                                {label}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            {showTranscript ? (
               <div className="george-input-container">
-                <div className="george-generated-by">Generated By Mr George</div>
+                <button type="button" className="george-new-chat" onClick={requestNewChat}>
+                  New chat
+                </button>
               </div>
             ) : null}
-            {statusDone ? (
-              <div className="george-trace">
-                <button
-                  type="button"
-                  className="george-trace-toggle"
-                  onClick={() => setIsTraceOpen((open) => !open)}
-                >
-                  <span className={`george-trace-chevron${isTraceOpen ? ' is-open' : ''}`} aria-hidden="true">⌄</span>
-                  Trace · {typeof timing?.server_ms === 'number' ? `${(timing.server_ms / 1000).toFixed(2)}s` : 'n/a'}
-                </button>
-                {isTraceOpen ? (
-                  <div className="george-trace-panel">
-                    {steps.agentThinking && steps.agentThinking.queries.length > 0 ? (
+        </section>
+    </main>
+      )}
+      {metaOverlay && messages[metaOverlay.messageIndex] ? createPortal(
+        <div
+          className={`george-meta-overlay${isMetaOverlayClosing ? ' is-closing' : ''}`}
+          onClick={closeMetaOverlay}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="george-meta-anchor"
+            style={{
+              top:
+                metaOverlay.vertical === 'above'
+                  ? metaOverlay.anchorRect.top - 1
+                  : metaOverlay.anchorRect.bottom + 1,
+              left: metaOverlay.align === 'right' ? metaOverlay.anchorRect.right : metaOverlay.anchorRect.left,
+              transform: (() => {
+                const xShift = metaOverlay.align === 'right' ? 'translateX(-100%)' : '';
+                const yShift = metaOverlay.vertical === 'above' ? 'translateY(-100%)' : '';
+                if (xShift && yShift) return `${xShift} ${yShift}`;
+                return xShift || yShift || 'none';
+              })()
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={`george-meta-modal${isMetaOverlayClosing ? ' is-closing' : ''}`}>
+              <button
+                type="button"
+                className="george-meta-close"
+                onClick={closeMetaOverlay}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              {(() => {
+                const message = messages[metaOverlay.messageIndex];
+                const trace = message.trace;
+                const traceQueries = trace?.agentThinking?.queries ?? [];
+                const groupedTools = traceQueries.reduce<Record<string, typeof traceQueries>>((groups, q) => {
+                  const label = q.tool.startsWith('vector_store_search_')
+                    ? q.tool.replace('vector_store_search_', '')
+                    : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+                  if (!groups[label]) groups[label] = [];
+                  groups[label].push(q);
+                  return groups;
+                }, {});
+
+                if (metaOverlay.type === 'sources') {
+                  return (
+                    <>
+                      <div className="george-meta-title">Sources</div>
+                      <div className="george-sources-list">
+                        {(message.sources ?? []).map((url, sourceIndex) => (
+                          <a
+                            key={`${url}-${sourceIndex}`}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="george-source-item"
+                          >
+                            <span>{formatSourceLabel(url)}</span>
+                            <span className="george-source-icon" aria-hidden="true">↗</span>
+                          </a>
+                        ))}
+                      </div>
+                    </>
+                  );
+                }
+
+                return (
+                  <>
+                    <div className="george-meta-title">Trace</div>
+                    {traceQueries.length > 0 ? (
                       <div className="george-trace-section">
                         <div className="george-trace-title">
                           <span className="george-trace-icon" aria-hidden="true">
@@ -2041,29 +3104,15 @@ export default function Home() {
                           Tools Used
                         </div>
                         <div className="george-trace-tools">
-                          {Object.entries(
-                            steps.agentThinking.queries.reduce<Record<string, typeof steps.agentThinking.queries>>(
-                              (groups, q) => {
-                                const label = q.tool.startsWith('vector_store_search_')
-                                  ? q.tool.replace('vector_store_search_', '')
-                                  : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-                                if (!groups[label]) groups[label] = [];
-                                groups[label].push(q);
-                                return groups;
-                              },
-                              {}
-                            )
-                          ).map(([label, group]) => {
+                          {Object.entries(groupedTools).map(([label, group]) => {
                             const totalSources = group.reduce((sum, q) => sum + q.sources.length, 0);
-                            const isCollapsed = collapsedTools[label] ?? false;
+                            const isCollapsed = message.collapsedTools?.[label] ?? false;
                             return (
                               <div key={label} className="george-trace-tool">
                                 <button
                                   type="button"
                                   className="george-trace-tool-header"
-                                  onClick={() =>
-                                    setCollapsedTools((prev) => ({ ...prev, [label]: !isCollapsed }))
-                                  }
+                                  onClick={() => toggleMessageToolCollapse(metaOverlay.messageIndex, label)}
                                 >
                                   <span className="george-trace-tool-name">{label}</span>
                                   <span className="george-trace-tool-summary">
@@ -2143,11 +3192,11 @@ export default function Home() {
                         Response Time
                       </div>
                       <div className="george-trace-text">
-                        {typeof timing?.server_ms === 'number' ? `${(timing.server_ms / 1000).toFixed(2)}s` : 'n/a'}
+                        {typeof message.timing?.server_ms === 'number' ? `${(message.timing.server_ms / 1000).toFixed(2)}s` : 'n/a'}
                       </div>
                     </div>
 
-                    {steps.queryAnalysis ? (
+                    {trace?.queryAnalysis ? (
                       <div className="george-trace-section">
                         <div className="george-trace-title">
                           <span className="george-trace-icon" aria-hidden="true">
@@ -2159,15 +3208,15 @@ export default function Home() {
                           Detected Metadata
                         </div>
                         <div className="george-trace-metadata">
-                          <div>Category: <span>{String(steps.queryAnalysis.metadata.category || '—')}</span></div>
-                          <div>Subcategory: <span>{String(steps.queryAnalysis.metadata.subcategory || '—')}</span></div>
-                          <div>Software: <span>{String(steps.queryAnalysis.metadata.software || '—')}</span></div>
-                          <div>Version: <span>{String(steps.queryAnalysis.metadata.software_version || '—')}</span></div>
-                          <div>OS: <span>{String(steps.queryAnalysis.metadata.os || '—')}</span></div>
-                          <div>OS Version: <span>{String(steps.queryAnalysis.metadata.os_version || '—')}</span></div>
+                          <div>Category: <span>{String(trace.queryAnalysis.metadata.category || '—')}</span></div>
+                          <div>Subcategory: <span>{String(trace.queryAnalysis.metadata.subcategory || '—')}</span></div>
+                          <div>Software: <span>{String(trace.queryAnalysis.metadata.software || '—')}</span></div>
+                          <div>Version: <span>{String(trace.queryAnalysis.metadata.software_version || '—')}</span></div>
+                          <div>OS: <span>{String(trace.queryAnalysis.metadata.os || '—')}</span></div>
+                          <div>OS Version: <span>{String(trace.queryAnalysis.metadata.os_version || '—')}</span></div>
                         </div>
-                        {Array.isArray((steps.queryAnalysis.metadata as { missing_information?: unknown }).missing_information) &&
-                        (steps.queryAnalysis.metadata as { missing_information?: unknown[] }).missing_information!.length > 0 ? (
+                        {Array.isArray((trace.queryAnalysis.metadata as { missing_information?: unknown }).missing_information) &&
+                        (trace.queryAnalysis.metadata as { missing_information?: unknown[] }).missing_information!.length > 0 ? (
                           <div className="george-trace-missing">
                             <span className="george-trace-icon" aria-hidden="true">
                               <svg viewBox="0 0 24 24">
@@ -2176,21 +3225,119 @@ export default function Home() {
                               </svg>
                             </span>
                             Missing:{' '}
-                            {(steps.queryAnalysis.metadata as { missing_information?: unknown[] }).missing_information!
+                            {(trace.queryAnalysis.metadata as { missing_information?: unknown[] }).missing_information!
                               .map((item) => String(item))
                               .join(', ')}
                           </div>
                         ) : null}
                       </div>
                     ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-    </main>
-      )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+      {zendeskNotFound ? createPortal(
+        <div
+          className={`george-alert-overlay${isZendeskNotFoundClosing ? ' is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          onClick={closeZendeskNotFound}
+        >
+          <div
+            className={`george-alert-modal${isZendeskNotFoundClosing ? ' is-closing' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="george-alert-title">Zendesk ticket not found</div>
+            <div className="george-alert-body">
+              {zendeskNotFound || 'That Zendesk ticket ID does not exist.'}
+            </div>
+            <button type="button" className="george-alert-close" onClick={closeZendeskNotFound}>
+              OK
+            </button>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+      {agentInterrupted ? createPortal(
+        <div
+          className={`george-alert-overlay${isAgentInterruptedClosing ? ' is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          onClick={closeAgentInterrupted}
+        >
+          <div
+            className={`george-alert-modal${isAgentInterruptedClosing ? ' is-closing' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="george-alert-title">Agent interrupted</div>
+            <div className="george-alert-body">
+              {agentInterrupted}
+            </div>
+            <button type="button" className="george-alert-close" onClick={closeAgentInterrupted}>
+              OK
+            </button>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+      {showAbortConfirm ? createPortal(
+        <div
+          className={`george-confirm-overlay${isAbortConfirmClosing ? ' is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          onClick={cancelAbort}
+        >
+          <div
+            className={`george-confirm-modal${isAbortConfirmClosing ? ' is-closing' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="george-confirm-title">Interrupt this run?</div>
+            <div className="george-confirm-body">
+              Are you sure you want to interrupt the agent?
+            </div>
+            <div className="george-confirm-actions">
+              <button type="button" className="george-confirm-cancel" onClick={cancelAbort}>
+                Cancel
+              </button>
+              <button type="button" className="george-confirm-accept" onClick={confirmAbort}>
+                Interrupt
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+      {showNewChatConfirm ? createPortal(
+        <div
+          className={`george-confirm-overlay${isNewChatConfirmClosing ? ' is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          onClick={cancelNewChat}
+        >
+          <div
+            className={`george-confirm-modal${isNewChatConfirmClosing ? ' is-closing' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="george-confirm-title">Start a new conversation?</div>
+            <div className="george-confirm-body">
+              Are you sure you want to start a new conversation? This will delete this session.
+            </div>
+            <div className="george-confirm-actions">
+              <button type="button" className="george-confirm-cancel" onClick={cancelNewChat}>
+                Cancel
+              </button>
+              <button type="button" className="george-confirm-accept" onClick={confirmNewChat}>
+                Start new
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
 
     </div>
   );
