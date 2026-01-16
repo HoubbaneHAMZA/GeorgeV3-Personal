@@ -1257,6 +1257,8 @@ export default function Home() {
     runModeRef.current = isChatRequest ? 'chat' : 'initial';
     abortRequestedRef.current = false;
     setShowAbortConfirm(false);
+    setMetaOverlay(null);
+    setIsMetaOverlayClosing(false);
     traceBufferRef.current = {};
     setInitialStreamStarted(false);
     setError('');
@@ -1276,6 +1278,21 @@ export default function Home() {
     if (isChatRequest) {
       setSteps((prev) => ({ started: true, queryAnalysis: prev.queryAnalysis }));
       setIsChatOverlayVisible(true);
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.role === 'assistant'
+            ? {
+                ...message,
+                sources: undefined,
+                trace: undefined,
+                timing: undefined,
+                isTraceOpen: false,
+                isSourcesOpen: false,
+                collapsedTools: undefined
+              }
+            : message
+        )
+      );
     } else {
       setMessages([]);
       setSessionId(null);
