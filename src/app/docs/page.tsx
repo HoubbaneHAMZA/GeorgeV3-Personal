@@ -1,46 +1,63 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase/client';
+
 const dataSources = [
   {
     name: 'QAI (FAQ + Solved Tickets)',
     description: 'Blended FAQ content and resolved Zendesk tickets for common questions and outcomes',
     format: 'HTML → Markdown + YAML',
-    details: 'Combines official FAQ phrasing with real-world solved cases'
+    details: 'Combines official FAQ phrasing with real-world solved cases',
+    storeKey: 'QAI'
   },
   {
     name: 'Macros',
     description: 'Pre-approved response templates',
     format: 'JSON → Markdown + YAML',
-    details: 'Standardized phrasing for consistent support responses'
+    details: 'Standardized phrasing for consistent support responses',
+    storeKey: 'MACROS'
+  },
+  {
+    name: 'Press Releases',
+    description: 'Press releases and news',
+    format: 'HTML → Markdown',
+    details: 'Press releases and news',
+    storeKey: 'PRESS_RELEASES'
   },
   {
     name: 'User Guides',
     description: 'Complete product documentation',
     format: 'PDF → Markdown',
-    details: 'Primary how-to and workflow reference for technical questions'
+    details: 'Primary how-to and workflow reference for technical questions',
+    storeKey: 'USER_GUIDES'
   },
   {
     name: 'Release Notes',
     description: 'Version-specific changes and known issues',
     format: 'PDF → Markdown',
-    details: 'First source checked for technical issues and recent fixes'
+    details: 'First source checked for technical issues and recent fixes',
+    storeKey: 'RELEASE_NOTES'
   },
   {
     name: 'Website Pages',
     description: 'Public product and marketing content',
     format: 'HTML → Markdown',
-    details: 'Primary source for pre-purchase and product comparison queries'
+    details: 'Primary source for pre-purchase and product comparison queries',
+    storeKey: 'WEBSITE'
   },
   {
     name: 'Confluence Pages',
     description: 'Internal technical documentation',
     format: 'XML → Markdown + YAML',
-    details: 'Self-contained technical docs for edge cases'
+    details: 'Self-contained technical docs for edge cases',
+    storeKey: 'CONFLUENCE'
   }
 ];
 
 const vectorStores = [
   { name: 'WEBSITE', source: 'Website Pages' },
+  { name: 'PRESS_RELEASES', source: 'Press Releases' },
   { name: 'MACROS', source: 'Macros' },
   { name: 'QAI', source: 'QAI (FAQ + Solved Tickets)' },
   { name: 'RELEASE_NOTES', source: 'Release Notes' },
@@ -57,6 +74,56 @@ const filters = [
 ];
 
 export default function DocsPage() {
+  const [sourcesSnapshot, setSourcesSnapshot] = useState<Record<string, {
+    lastUpdated: string | null;
+    updatedFiles: Array<{ docId: string; docUpdatedAt: string | null }>;
+  }> | null>(null);
+  const [openUpdatedFor, setOpenUpdatedFor] = useState<string | null>(null);
+  const [updatedModalClosing, setUpdatedModalClosing] = useState(false);
+  const titleizeDocId = (value: string) => {
+    if (!value) return 'Unknown doc';
+    const stripped = value.replace(/\.[a-z0-9]+$/i, '');
+    const normalized = stripped.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normalized) return 'Unknown doc';
+    return normalized
+      .split(' ')
+      .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+      .join(' ');
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    supabase
+      .from('dxo_vectorstore_snapshots')
+      .select('vectorstore_key, last_updated, updated_files')
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) {
+          console.warn('[docs] failed to load vectorstore snapshots', error.message);
+          return;
+        }
+        const next: Record<string, { lastUpdated: string | null; updatedFiles: Array<{ docId: string; docUpdatedAt: string | null }> }> = {};
+        (data ?? []).forEach((row) => {
+          const key = String(row.vectorstore_key || '').toLowerCase();
+          if (!key) return;
+          const updatedFiles = Array.isArray(row.updated_files)
+            ? row.updated_files.map((item: { doc_id?: unknown; file_name?: unknown; doc_updated_at?: unknown }) => ({
+                docId: String(item?.doc_id || item?.file_name || ''),
+                docUpdatedAt: item?.doc_updated_at ? String(item.doc_updated_at) : null
+              }))
+            : [];
+          next[key] = {
+            lastUpdated: row.last_updated ? String(row.last_updated) : null,
+            updatedFiles
+          };
+        });
+        setSourcesSnapshot(next);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <div className="george-app">
       <main className="george-docs">
@@ -125,16 +192,109 @@ export default function DocsPage() {
           <div className="george-docs-list">
             {dataSources.map((source) => (
               <div key={source.name} className="george-docs-row">
-                <div className="george-docs-row-header">
-                  <h4>{source.name}</h4>
-                  <span>{source.format}</span>
+                <div className="george-docs-row-main">
+                  <div className="george-docs-row-header">
+                    <div className="george-docs-row-title">
+                      <h4>{source.name}</h4>
+                      <span className="george-docs-row-format">{source.format}</span>
+                    </div>
+                  </div>
+                  <p>{source.description}</p>
+                  <p className="george-docs-row-detail">{source.details}</p>
                 </div>
-                <p>{source.description}</p>
-                <p className="george-docs-row-detail">{source.details}</p>
+                <div className="george-docs-row-meta">
+                  <div className="george-docs-row-meta-title">Data status</div>
+                  <div className="george-docs-row-meta-table">
+                    {(() => {
+                      const key = source.storeKey.toLowerCase();
+                      const snapshot = sourcesSnapshot?.[key];
+                      return (
+                        <>
+                          <div>
+                            <span>Last updated</span>
+                            <strong>
+                              {snapshot?.lastUpdated
+                                ? new Date(snapshot.lastUpdated).toLocaleString()
+                                : '—'}
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Owner</span>
+                            <strong>Auto</strong>
+                          </div>
+                          <button
+                            type="button"
+                            className="george-docs-updated-btn"
+                            onClick={() =>
+                              setOpenUpdatedFor((prev) => (prev === key ? null : key))
+                            }
+                          >
+                            Updated files ({snapshot?.updatedFiles?.length ?? 0})
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </section>
+
+        {openUpdatedFor ? (
+          <div
+            className={`george-docs-overlay${updatedModalClosing ? ' is-closing' : ''}`}
+            onClick={() => {
+              if (updatedModalClosing) return;
+              setUpdatedModalClosing(true);
+              window.setTimeout(() => {
+                setOpenUpdatedFor(null);
+                setUpdatedModalClosing(false);
+              }, 180);
+            }}
+          >
+            <div
+              className={`george-docs-modal${updatedModalClosing ? ' is-closing' : ''}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="george-docs-modal-close"
+                onClick={() => {
+                  if (updatedModalClosing) return;
+                  setUpdatedModalClosing(true);
+                  window.setTimeout(() => {
+                    setOpenUpdatedFor(null);
+                    setUpdatedModalClosing(false);
+                  }, 180);
+                }}
+              >
+                ×
+              </button>
+              <div className="george-docs-modal-title">Updated files</div>
+              <div className="george-docs-modal-body">
+                {(() => {
+                  const files = [...(sourcesSnapshot?.[openUpdatedFor]?.updatedFiles ?? [])].sort((a, b) => {
+                    const aTs = a.docUpdatedAt ? Date.parse(a.docUpdatedAt) : 0;
+                    const bTs = b.docUpdatedAt ? Date.parse(b.docUpdatedAt) : 0;
+                    return bTs - aTs;
+                  });
+                  if (files.length === 0) {
+                    return <div className="george-docs-updated-empty">No new updates since last check.</div>;
+                  }
+                  return files.map((file) => (
+                    <div key={`${file.docId}-${file.docUpdatedAt ?? ''}`} className="george-docs-updated-item">
+                      <span className="george-docs-updated-name">{titleizeDocId(file.docId)}</span>
+                      <span className="george-docs-updated-date">
+                        {file.docUpdatedAt ? new Date(file.docUpdatedAt).toLocaleString() : '—'}
+                      </span>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <section className="george-docs-section">
           <h3>Vector Stores</h3>

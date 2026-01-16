@@ -258,6 +258,84 @@ html, body {
 .george-docs-row {
   border: 1px solid var(--border);
   padding: 18px;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.george-docs-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.george-docs-row-meta {
+  flex: 0 0 220px;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+
+.george-docs-row-meta-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a59b91;
+  margin-bottom: 10px;
+}
+
+.george-docs-row-meta-table {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.george-docs-row-meta-table span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.george-docs-row-meta-table strong {
+  font-size: 0.85rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.george-docs-updated-btn {
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  justify-self: start;
+}
+
+.george-docs-updated-btn:hover {
+  background: var(--surface);
+}
+
+.george-docs-updated-list {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: #fbf7f2;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.george-docs-updated-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.george-docs-updated-empty {
+  color: var(--muted);
 }
 
 .george-docs-row-header {
@@ -265,6 +343,19 @@ html, body {
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 8px;
+}
+
+.george-docs-row-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 10px;
+}
+
+.george-docs-row-format {
+  font-size: 0.82rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 .george-docs-row-header span {
@@ -280,6 +371,18 @@ html, body {
 .george-docs-row-detail {
   font-size: 0.8rem;
   color: #a59b91;
+}
+
+@media (max-width: 900px) {
+  .george-docs-row {
+    flex-direction: column;
+  }
+  .george-docs-row-meta {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
 }
 
 .george-docs-table {
@@ -1544,6 +1647,108 @@ html, body {
 
 .george-confirm-accept:hover {
   background: rgba(214, 71, 71, 0.08);
+}
+
+.george-docs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(2px);
+  animation: georgeOverlayFade 0.2s ease;
+}
+
+.george-docs-overlay.is-closing {
+  animation: georgeOverlayFadeOut 0.18s ease forwards;
+}
+
+.george-docs-modal {
+  width: min(520px, 90vw);
+  max-height: min(70vh, 520px);
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 28px 80px rgba(55, 34, 20, 0.18);
+  padding: 16px 18px 18px;
+  position: relative;
+  animation: georgeModalZoom 0.25s ease;
+}
+
+.george-docs-modal.is-closing {
+  animation: georgeModalZoomOut 0.18s ease forwards;
+}
+
+.george-docs-modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.george-docs-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(55vh, 420px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.george-docs-updated-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(205, 186, 170, 0.5);
+  border-radius: 12px;
+  background: #fdfaf6;
+}
+
+.george-docs-updated-item + .george-docs-updated-item {
+  margin-top: 2px;
+}
+
+.george-docs-updated-name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.george-docs-updated-date {
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(216, 198, 183, 0.35);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.george-docs-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text);
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.george-docs-modal-close:hover {
+  background: var(--surface);
 }
 
 .george-meta-title {
