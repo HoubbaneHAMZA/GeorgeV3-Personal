@@ -184,6 +184,13 @@ export default function DocsPage() {
                 images are analyzed in parallel with a vision model and their descriptions are appended to the query.
               </p>
             </div>
+            <div className="george-docs-card">
+              <h4>5. Long Ticket Summary</h4>
+              <p>
+                Long conversations are compacted before the run: older messages are summarized and injected so the
+                agent keeps full context without exceeding the session limit.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -346,7 +353,15 @@ export default function DocsPage() {
             </div>
             <div className="george-docs-model">
               <p>Metadata Extractor</p>
-              <code>gpt-4.1</code>
+              <code>gpt-5-mini</code>
+            </div>
+            <div className="george-docs-model">
+              <p>Ticket Metadata Correction</p>
+              <code>gpt-5-mini</code>
+            </div>
+            <div className="george-docs-model">
+              <p>History Summary</p>
+              <code>gpt-4.1-mini</code>
             </div>
             <div className="george-docs-model">
               <p>Attachment Vision</p>
