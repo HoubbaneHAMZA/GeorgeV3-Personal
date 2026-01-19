@@ -206,7 +206,8 @@ export default function DocsPage() {
                   <div className="george-docs-row-meta-title">Data status</div>
                   <div className="george-docs-row-meta-table">
                     {(() => {
-                      const key = source.storeKey.toLowerCase();
+                      const key =
+                        source.storeKey === 'MACROS' ? 'zendesk_macros' : source.storeKey.toLowerCase();
                       const snapshot = sourcesSnapshot?.[key];
                       return (
                         <>

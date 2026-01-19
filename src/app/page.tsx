@@ -309,6 +309,7 @@ export default function Home() {
   const agentEndpoint = '/api/agent';
   const queryAnalysisEndpoint = '/api/query-analysis';
   const ticketFetchEndpoint = '/api/ticket-fetch';
+  const costTrackerEndpoint = '/api/cost-tracker';
   const sessionStorageKey = useMemo(() => `george:session:${pathname}`, [pathname]);
   const messagesStorageKey = useMemo(() => `george:messages:${pathname}`, [pathname]);
   const [input, setInput] = useState('');
@@ -1338,6 +1339,7 @@ export default function Home() {
     let agentInputPayload: AgentInputPayload | null = null;
 
     const startedAt = performance.now();
+    const usageRecords: Array<{ source?: string; costUsd?: number }> = [];
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
@@ -1362,6 +1364,13 @@ export default function Home() {
           if (eventType === 'status') {
             const stage = String(data?.stage || '');
             const message = String(data?.message || '');
+            if (stage === 'llm_usage') {
+              if (data?.data && typeof data.data === 'object') {
+                usageRecords.push(data.data as { source?: string; costUsd?: number });
+              }
+              console.log('[llm_usage][ticket_fetch]', data?.data);
+              return;
+            }
             if (stage) {
               setStatusSteps([{ id: stage, label: message || stage }]);
               setActiveStatusId(stage);
@@ -1461,6 +1470,13 @@ export default function Home() {
           if (eventType === 'status') {
             const stage = String(data?.stage || '');
             const message = String(data?.message || '');
+            if (stage === 'llm_usage') {
+              if (data?.data && typeof data.data === 'object') {
+                usageRecords.push(data.data as { source?: string; costUsd?: number });
+              }
+              console.log('[llm_usage][query_analysis]', data?.data);
+              return;
+            }
             if (stage) {
               setStatusSteps([{ id: stage, label: message || stage }]);
               setActiveStatusId(stage);
@@ -1614,6 +1630,19 @@ export default function Home() {
           const eventData = data?.data as Record<string, unknown> | undefined;
           const normalizedStage = stage.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
           const label = message.trim() ? message : normalizedStage;
+
+          if (stage === 'llm_usage') {
+            const source = eventData && typeof eventData.source === 'string' ? eventData.source : '';
+            if (eventData && typeof eventData === 'object') {
+              usageRecords.push(eventData as { source?: string; costUsd?: number });
+            }
+            if (source === 'agent_run') {
+              console.log('[llm_usage][agent]', eventData);
+            } else {
+              console.log('[llm_usage]', eventData);
+            }
+            return;
+          }
 
           if (stage === 'timing') {
             console.log('[timing]', { message, data: eventData });
@@ -1879,6 +1908,36 @@ export default function Home() {
           const outputText = String(data?.output || '');
           if (typeof data?.sessionId === 'string' && data.sessionId.trim()) {
             setSessionId(data.sessionId);
+          }
+          if (usageRecords.length > 0) {
+            const totalCostUsd = usageRecords.reduce((sum, record) => {
+              const value = typeof record.costUsd === 'number' ? record.costUsd : 0;
+              return sum + value;
+            }, 0);
+            const bySource = usageRecords.reduce<Record<string, number>>((acc, record) => {
+              const source = typeof record.source === 'string' ? record.source : 'unknown';
+              const value = typeof record.costUsd === 'number' ? record.costUsd : 0;
+              acc[source] = (acc[source] || 0) + value;
+              return acc;
+            }, {});
+            const timestamp = new Date().toISOString();
+            const payload = {
+              input: cleanInput,
+              timestamp,
+              totalCostUsd,
+              bySource
+            };
+            console.log('[llm_usage][total]', payload);
+            void fetch(costTrackerEndpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`
+              },
+              body: JSON.stringify(payload)
+            }).catch((error) => {
+              console.warn('[llm_usage][total] failed to persist', error);
+            });
           }
           const meta = data && typeof data === 'object' ? (data as { meta?: { server_ms?: number } }).meta : undefined;
           const serverMs =

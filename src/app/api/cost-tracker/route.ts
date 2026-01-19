@@ -1,0 +1,40 @@
+const SUPABASE_ENDPOINT = 'https://oqwokjqdjybzoajpbqtq.supabase.co/functions/v1/cost-tracker';
+
+export const runtime = 'nodejs';
+
+export async function POST(request: Request) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!token) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const { supabaseServer } = await import('@/lib/supabase/server');
+  const { data: userData, error: userError } = await supabaseServer.auth.getUser(token);
+  if (userError || !userData.user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!anonKey) {
+    return Response.json({ error: 'NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured.' }, { status: 500 });
+  }
+
+  const body = await request.text();
+  const response = await fetch(SUPABASE_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`
+    },
+    body
+  });
+
+  const responseBody = await response.text();
+  return new Response(responseBody, {
+    status: response.status,
+    headers: {
+      'Content-Type': response.headers.get('Content-Type') || 'application/json; charset=utf-8'
+    }
+  });
+}
