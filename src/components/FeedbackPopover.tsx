@@ -19,6 +19,11 @@ const DEFAULT_TAGS = [
   'Answer length is too long or short',
   "Didn't speak in the right language",
 ];
+const GOOD_ONLY_TAGS = [
+  "Tone wasn't right",
+  'The answer is too short',
+  'The answer is too long',
+];
 
 export default function FeedbackPopover({
   rating,
@@ -34,8 +39,13 @@ export default function FeedbackPopover({
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const popoverRef = useRef<HTMLDivElement>(null);
-  const isBadRating = rating === 'bad';
-  const showTags = rating === 'bad' || rating === 'okay';
+  const isUnusableRating = rating === 'unusable';
+  const isProblematicRating = rating === 'problematic';
+  const isUsableRating = rating === 'usable';
+  const isGoodRating = rating === 'good';
+  const isPerfectRating = rating === 'perfect';
+  const showTags = !isPerfectRating;
+  const allowOther = isUsableRating || isProblematicRating || isUnusableRating;
 
   // Fetch tags from server
   useEffect(() => {
@@ -58,9 +68,14 @@ export default function FeedbackPopover({
       }
     };
     if (showTags) {
-      fetchTags();
+      if (isGoodRating) {
+        setAvailableTags(GOOD_ONLY_TAGS);
+        setIsLoadingTags(false);
+      } else {
+        fetchTags();
+      }
     }
-  }, [showTags]);
+  }, [showTags, isGoodRating]);
 
   // Close on click outside
   useEffect(() => {
@@ -93,6 +108,7 @@ export default function FeedbackPopover({
   };
 
   const addCustomTag = () => {
+    if (!allowOther) return;
     const value = otherTagValue.trim();
     if (!value) return;
 
@@ -115,17 +131,17 @@ export default function FeedbackPopover({
     onSubmit(finalTags, comment, finalCustomTags.length > 0 ? finalCustomTags : undefined);
   };
 
-  const title = isBadRating
+  const title = isUnusableRating
     ? 'What went wrong?'
-    : rating === 'okay'
+    : rating === 'problematic'
       ? 'What could be improved?'
       : 'Thanks! Any comment?';
 
-  // For bad ratings, require at least one tag (either selected or typed in Other)
-  // For okay ratings, tags are optional
-  const hasOtherTag = showOtherInput && otherTagValue.trim().length > 0;
+  // For unusable ratings, require at least one tag (either selected or typed in Other)
+  // For problematic ratings, tags are optional
+  const hasOtherTag = allowOther && showOtherInput && otherTagValue.trim().length > 0;
   const hasAtLeastOneTag = tags.length > 0 || customTags.length > 0 || hasOtherTag;
-  const canSubmit = !isBadRating || hasAtLeastOneTag;
+  const canSubmit = !(isUnusableRating || isProblematicRating) || hasAtLeastOneTag;
 
   return (
     <div className="george-feedback-popover" ref={popoverRef}>
@@ -169,7 +185,7 @@ export default function FeedbackPopover({
                 ))}
               </>
             )}
-            {!showOtherInput ? (
+            {allowOther && !showOtherInput ? (
               <button
                 type="button"
                 className="george-feedback-tag george-feedback-tag-other"
@@ -177,7 +193,7 @@ export default function FeedbackPopover({
               >
                 Other...
               </button>
-            ) : (
+            ) : allowOther && showOtherInput ? (
               <input
                 type="text"
                 className="george-feedback-other-input"
@@ -192,13 +208,13 @@ export default function FeedbackPopover({
                 }}
                 autoFocus
               />
-            )}
+            ) : null}
           </div>
         )}
 
         <div className="george-feedback-comment">
           <label className="george-feedback-comment-label">
-            Comment {isBadRating ? '(optional)' : '(optional)'}
+            Comment {isUnusableRating ? '(optional)' : '(optional)'}
           </label>
           <textarea
             className="george-feedback-textarea"

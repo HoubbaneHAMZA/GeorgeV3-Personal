@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import {
   AreaChart,
   Area,
@@ -15,52 +14,20 @@ import {
 type TrendData = {
   date: string;
   total: number;
+  unusable: number;
+  problematic: number;
+  usable: number;
   good: number;
-  okay: number;
-  bad: number;
+  perfect: number;
 };
 
 type AnalyticsTrendsProps = {
-  accessToken: string;
-  from: string;
-  to: string;
+  data: TrendData[];
+  isLoading: boolean;
+  error: string | null;
 };
 
-export default function AnalyticsTrends({ accessToken, from, to }: AnalyticsTrendsProps) {
-  const [data, setData] = useState<TrendData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      const params = new URLSearchParams();
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-      params.set('interval', 'day');
-
-      try {
-        const response = await fetch(`/api/feedback-analytics/stats/trends?${params}`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch trends data');
-        }
-
-        const result = await response.json();
-        setData(result.trends || []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [accessToken, from, to]);
+export default function AnalyticsTrends({ data, isLoading, error }: AnalyticsTrendsProps) {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -111,15 +78,23 @@ export default function AnalyticsTrends({ accessToken, from, to }: AnalyticsTren
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
             <defs>
+              <linearGradient id="colorPerfect" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+              </linearGradient>
               <linearGradient id="colorGood" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
               </linearGradient>
-              <linearGradient id="colorOkay" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="colorUsable" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#eab308" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="#eab308" stopOpacity={0} />
               </linearGradient>
-              <linearGradient id="colorBad" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="colorProblematic" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="colorUnusable" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
               </linearGradient>
@@ -149,6 +124,15 @@ export default function AnalyticsTrends({ accessToken, from, to }: AnalyticsTren
             />
             <Area
               type="monotone"
+              dataKey="perfect"
+              name="Perfect"
+              stroke="#14b8a6"
+              fillOpacity={1}
+              fill="url(#colorPerfect)"
+              stackId="1"
+            />
+            <Area
+              type="monotone"
               dataKey="good"
               name="Good"
               stroke="#22c55e"
@@ -158,20 +142,29 @@ export default function AnalyticsTrends({ accessToken, from, to }: AnalyticsTren
             />
             <Area
               type="monotone"
-              dataKey="okay"
-              name="Okay"
+              dataKey="usable"
+              name="Usable"
               stroke="#eab308"
               fillOpacity={1}
-              fill="url(#colorOkay)"
+              fill="url(#colorUsable)"
               stackId="1"
             />
             <Area
               type="monotone"
-              dataKey="bad"
-              name="Bad"
+              dataKey="problematic"
+              name="Problematic"
+              stroke="#f97316"
+              fillOpacity={1}
+              fill="url(#colorProblematic)"
+              stackId="1"
+            />
+            <Area
+              type="monotone"
+              dataKey="unusable"
+              name="Unusable"
               stroke="#ef4444"
               fillOpacity={1}
-              fill="url(#colorBad)"
+              fill="url(#colorUnusable)"
               stackId="1"
             />
           </AreaChart>

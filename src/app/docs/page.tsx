@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase/client';
 
 const dataSources = [
   {
@@ -93,31 +92,37 @@ export default function DocsPage() {
 
   useEffect(() => {
     let mounted = true;
-    supabase
-      .from('dxo_vectorstore_snapshots')
-      .select('vectorstore_key, last_updated, updated_files')
-      .then(({ data, error }) => {
-        if (!mounted) return;
-        if (error) {
-          console.warn('[docs] failed to load vectorstore snapshots', error.message);
-          return;
+    fetch('/api/docs/snapshots', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.error || 'Failed to load snapshots.');
         }
+        return response.json();
+      })
+      .then((payload) => {
+        if (!mounted) return;
+        const snapshots = Array.isArray(payload?.snapshots) ? payload.snapshots : [];
         const next: Record<string, { lastUpdated: string | null; updatedFiles: Array<{ docId: string; docUpdatedAt: string | null }> }> = {};
-        (data ?? []).forEach((row) => {
-          const key = String(row.vectorstore_key || '').toLowerCase();
+        snapshots.forEach((row: { vectorstore_key?: unknown; last_updated?: unknown; updated_files?: unknown }) => {
+          const key = String(row?.vectorstore_key || '').toLowerCase();
           if (!key) return;
-          const updatedFiles = Array.isArray(row.updated_files)
+          const updatedFiles = Array.isArray(row?.updated_files)
             ? row.updated_files.map((item: { doc_id?: unknown; file_name?: unknown; doc_updated_at?: unknown }) => ({
                 docId: String(item?.doc_id || item?.file_name || ''),
                 docUpdatedAt: item?.doc_updated_at ? String(item.doc_updated_at) : null
               }))
             : [];
           next[key] = {
-            lastUpdated: row.last_updated ? String(row.last_updated) : null,
+            lastUpdated: row?.last_updated ? String(row.last_updated) : null,
             updatedFiles
           };
         });
         setSourcesSnapshot(next);
+      })
+      .catch((error: Error) => {
+        if (!mounted) return;
+        console.warn('[docs] failed to load vectorstore snapshots', error.message);
       });
     return () => {
       mounted = false;

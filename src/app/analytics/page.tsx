@@ -15,6 +15,58 @@ type DateRange = {
   label: string;
 };
 
+type OverviewData = {
+  total_runs: number;
+  feedback_count: number;
+  feedback_rate: number;
+  unusable_rate: number;
+  problematic_rate: number;
+  usable_rate: number;
+  good_rate: number;
+  perfect_rate: number;
+  avg_cost: number;
+  avg_response_time: number;
+};
+
+type TrendData = {
+  date: string;
+  total: number;
+  unusable: number;
+  problematic: number;
+  usable: number;
+  good: number;
+  perfect: number;
+};
+
+type TagData = {
+  tag: string;
+  count: number;
+  unusable: number;
+  problematic: number;
+};
+
+type FeedbackItem = {
+  id: string;
+  created_at: string;
+  user_input: string;
+  response_content: string;
+  feedback_rating: 'unusable' | 'problematic' | 'usable' | 'good' | 'perfect';
+  feedback_tags: string[] | null;
+  feedback_comment: string | null;
+  trace_data: unknown;
+};
+
+type AnalyticsBundle = {
+  overview: OverviewData;
+  trends: TrendData[];
+  tags: TagData[];
+  feedback_list: {
+    interactions: FeedbackItem[];
+    page: number;
+    limit: number;
+  };
+};
+
 const DATE_PRESETS: { label: string; getDates: () => { from: string; to: string } }[] = [
   {
     label: 'Last 7 days',
@@ -60,6 +112,12 @@ export default function AnalyticsPage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [bundle, setBundle] = useState<AnalyticsBundle | null>(null);
+  const [bundleLoading, setBundleLoading] = useState(false);
+  const [bundleError, setBundleError] = useState<string | null>(null);
+  const [ratingFilter, setRatingFilter] = useState<string>('');
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -79,6 +137,10 @@ export default function AnalyticsPage() {
     setDateRange({ ...dates, label: preset.label });
     setShowDatePicker(false);
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [dateRange.from, dateRange.to, ratingFilter]);
 
   const handleExport = useCallback(async (format: 'json' | 'csv') => {
     if (!accessToken) return;
@@ -112,6 +174,41 @@ export default function AnalyticsPage() {
     }
     setShowExportMenu(false);
   }, [accessToken, dateRange]);
+
+  useEffect(() => {
+    const fetchBundle = async () => {
+      if (!accessToken) return;
+      setBundleLoading(true);
+      setBundleError(null);
+
+      const params = new URLSearchParams();
+      if (dateRange.from) params.set('from', dateRange.from);
+      if (dateRange.to) params.set('to', dateRange.to);
+      params.set('interval', 'day');
+      if (ratingFilter) params.set('rating', ratingFilter);
+      params.set('page', String(page));
+      params.set('limit', String(limit));
+
+      try {
+        const response = await fetch(`/api/feedback-analytics/bundle?${params}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch analytics data');
+        }
+
+        const result = await response.json();
+        setBundle(result as AnalyticsBundle);
+      } catch (err) {
+        setBundleError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        setBundleLoading(false);
+      }
+    };
+
+    fetchBundle();
+  }, [accessToken, dateRange.from, dateRange.to, ratingFilter, page, limit]);
 
   if (isLoading) {
     return (
@@ -189,29 +286,34 @@ export default function AnalyticsPage() {
           {accessToken && (
             <>
               <AnalyticsOverview
-                accessToken={accessToken}
-                from={dateRange.from}
-                to={dateRange.to}
+                data={bundle?.overview ?? null}
+                isLoading={bundleLoading}
+                error={bundleError}
               />
 
               <AnalyticsTrends
-                accessToken={accessToken}
-                from={dateRange.from}
-                to={dateRange.to}
+                data={bundle?.trends ?? []}
+                isLoading={bundleLoading}
+                error={bundleError}
               />
 
               <div className="george-analytics-row">
                 <AnalyticsTags
-                  accessToken={accessToken}
-                  from={dateRange.from}
-                  to={dateRange.to}
+                  data={bundle?.tags ?? []}
+                  isLoading={bundleLoading}
+                  error={bundleError}
                 />
               </div>
 
               <AnalyticsFeedbackList
-                accessToken={accessToken}
-                from={dateRange.from}
-                to={dateRange.to}
+                data={bundle?.feedback_list?.interactions ?? []}
+                isLoading={bundleLoading}
+                error={bundleError}
+                page={page}
+                limit={limit}
+                ratingFilter={ratingFilter}
+                onRatingFilterChange={setRatingFilter}
+                onPageChange={setPage}
               />
             </>
           )}

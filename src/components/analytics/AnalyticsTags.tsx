@@ -1,55 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 type TagData = {
   tag: string;
   count: number;
-  bad: number;
-  okay: number;
+  unusable: number;
+  problematic: number;
 };
 
 type AnalyticsTagsProps = {
-  accessToken: string;
-  from: string;
-  to: string;
+  data: TagData[];
+  isLoading: boolean;
+  error: string | null;
 };
 
-export default function AnalyticsTags({ accessToken, from, to }: AnalyticsTagsProps) {
-  const [data, setData] = useState<TagData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      const params = new URLSearchParams();
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-
-      try {
-        const response = await fetch(`/api/feedback-analytics/stats/tags?${params}`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch tags data');
-        }
-
-        const result = await response.json();
-        setData(result.tags || []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [accessToken, from, to]);
-
+export default function AnalyticsTags({ data, isLoading, error }: AnalyticsTagsProps) {
   if (isLoading) {
     return (
       <div className="george-analytics-tags">
@@ -96,8 +60,8 @@ export default function AnalyticsTags({ accessToken, from, to }: AnalyticsTagsPr
       </div>
       <div className="george-analytics-tags-list">
         {data.slice(0, 8).map((tag, index) => {
-          const badPercent = tag.count > 0 ? (tag.bad / tag.count) * 100 : 0;
-          const okayPercent = tag.count > 0 ? (tag.okay / tag.count) * 100 : 0;
+          const unusablePercent = tag.count > 0 ? (tag.unusable / tag.count) * 100 : 0;
+          const problematicPercent = tag.count > 0 ? (tag.problematic / tag.count) * 100 : 0;
           const barWidth = (tag.count / maxCount) * 100;
 
           return (
@@ -111,20 +75,20 @@ export default function AnalyticsTags({ accessToken, from, to }: AnalyticsTagsPr
                     style={{ width: `${barWidth}%` }}
                   >
                     <div
-                      className="george-analytics-tag-bar-bad"
-                      style={{ width: `${badPercent}%` }}
-                      title={`Bad: ${tag.bad}`}
+                      className="george-analytics-tag-bar-unusable"
+                      style={{ width: `${unusablePercent}%` }}
+                      title={`Unusable: ${tag.unusable}`}
                     />
                     <div
-                      className="george-analytics-tag-bar-okay"
-                      style={{ width: `${okayPercent}%` }}
-                      title={`Okay: ${tag.okay}`}
+                      className="george-analytics-tag-bar-problematic"
+                      style={{ width: `${problematicPercent}%` }}
+                      title={`Problematic: ${tag.problematic}`}
                     />
                   </div>
                 </div>
                 <div className="george-analytics-tag-breakdown">
-                  <span className="george-analytics-tag-bad">{tag.bad} bad</span>
-                  <span className="george-analytics-tag-okay">{tag.okay} okay</span>
+                  <span className="george-analytics-tag-unusable">{tag.unusable} unusable</span>
+                  <span className="george-analytics-tag-problematic">{tag.problematic} problematic</span>
                 </div>
               </div>
               <div className="george-analytics-tag-count">{tag.count}</div>

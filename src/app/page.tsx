@@ -877,7 +877,7 @@ export default function Home() {
         if (!interactions || !Array.isArray(interactions)) return;
 
         // Valid ratings for the current FeedbackButtons component
-        const validRatings: FeedbackRating[] = ['bad', 'okay', 'good'];
+        const validRatings: FeedbackRating[] = ['unusable', 'problematic', 'usable', 'good', 'perfect'];
         const isValidRating = (r: string | null | undefined): r is FeedbackRating =>
           r !== null && r !== undefined && validRatings.includes(r as FeedbackRating);
 

@@ -1,59 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { TrendingUp, MessageSquare, ThumbsUp, Clock } from 'lucide-react';
 
 type OverviewData = {
   total_runs: number;
   feedback_count: number;
   feedback_rate: number;
+  unusable_rate: number;
+  problematic_rate: number;
+  usable_rate: number;
   good_rate: number;
-  okay_rate: number;
-  bad_rate: number;
+  perfect_rate: number;
   avg_cost: number;
   avg_response_time: number;
 };
 
 type AnalyticsOverviewProps = {
-  accessToken: string;
-  from: string;
-  to: string;
+  data: OverviewData | null;
+  isLoading: boolean;
+  error: string | null;
 };
 
-export default function AnalyticsOverview({ accessToken, from, to }: AnalyticsOverviewProps) {
-  const [data, setData] = useState<OverviewData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      const params = new URLSearchParams();
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-
-      try {
-        const response = await fetch(`/api/feedback-analytics/stats/overview?${params}`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch overview data');
-        }
-
-        const result = await response.json();
-        setData(result);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [accessToken, from, to]);
+export default function AnalyticsOverview({ data, isLoading, error }: AnalyticsOverviewProps) {
 
   if (isLoading) {
     return (
@@ -80,7 +48,7 @@ export default function AnalyticsOverview({ accessToken, from, to }: AnalyticsOv
   if (!data) return null;
 
   const satisfactionRate = data.feedback_count > 0
-    ? data.good_rate
+    ? data.good_rate + data.perfect_rate
     : 0;
 
   const cards = [
@@ -100,7 +68,7 @@ export default function AnalyticsOverview({ accessToken, from, to }: AnalyticsOv
       icon: ThumbsUp,
       label: 'Satisfaction',
       value: `${satisfactionRate.toFixed(1)}%`,
-      subtext: 'rated good'
+      subtext: 'good + perfect'
     },
     {
       icon: Clock,
@@ -135,6 +103,19 @@ export default function AnalyticsOverview({ accessToken, from, to }: AnalyticsOv
         <div className="george-analytics-breakdown-bars">
           <div className="george-analytics-breakdown-item">
             <div className="george-analytics-breakdown-label">
+              <span className="george-analytics-breakdown-dot is-perfect" />
+              Perfect
+            </div>
+            <div className="george-analytics-breakdown-bar">
+              <div
+                className="george-analytics-breakdown-fill is-perfect"
+                style={{ width: `${data.perfect_rate}%` }}
+              />
+            </div>
+            <div className="george-analytics-breakdown-value">{data.perfect_rate.toFixed(1)}%</div>
+          </div>
+          <div className="george-analytics-breakdown-item">
+            <div className="george-analytics-breakdown-label">
               <span className="george-analytics-breakdown-dot is-good" />
               Good
             </div>
@@ -148,29 +129,42 @@ export default function AnalyticsOverview({ accessToken, from, to }: AnalyticsOv
           </div>
           <div className="george-analytics-breakdown-item">
             <div className="george-analytics-breakdown-label">
-              <span className="george-analytics-breakdown-dot is-okay" />
-              Okay
+              <span className="george-analytics-breakdown-dot is-usable" />
+              Usable
             </div>
             <div className="george-analytics-breakdown-bar">
               <div
-                className="george-analytics-breakdown-fill is-okay"
-                style={{ width: `${data.okay_rate}%` }}
+                className="george-analytics-breakdown-fill is-usable"
+                style={{ width: `${data.usable_rate}%` }}
               />
             </div>
-            <div className="george-analytics-breakdown-value">{data.okay_rate.toFixed(1)}%</div>
+            <div className="george-analytics-breakdown-value">{data.usable_rate.toFixed(1)}%</div>
           </div>
           <div className="george-analytics-breakdown-item">
             <div className="george-analytics-breakdown-label">
-              <span className="george-analytics-breakdown-dot is-bad" />
-              Bad
+              <span className="george-analytics-breakdown-dot is-problematic" />
+              Problematic
             </div>
             <div className="george-analytics-breakdown-bar">
               <div
-                className="george-analytics-breakdown-fill is-bad"
-                style={{ width: `${data.bad_rate}%` }}
+                className="george-analytics-breakdown-fill is-problematic"
+                style={{ width: `${data.problematic_rate}%` }}
               />
             </div>
-            <div className="george-analytics-breakdown-value">{data.bad_rate.toFixed(1)}%</div>
+            <div className="george-analytics-breakdown-value">{data.problematic_rate.toFixed(1)}%</div>
+          </div>
+          <div className="george-analytics-breakdown-item">
+            <div className="george-analytics-breakdown-label">
+              <span className="george-analytics-breakdown-dot is-unusable" />
+              Unusable
+            </div>
+            <div className="george-analytics-breakdown-bar">
+              <div
+                className="george-analytics-breakdown-fill is-unusable"
+                style={{ width: `${data.unusable_rate}%` }}
+              />
+            </div>
+            <div className="george-analytics-breakdown-value">{data.unusable_rate.toFixed(1)}%</div>
           </div>
         </div>
       </div>

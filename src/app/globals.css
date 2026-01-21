@@ -2834,6 +2834,30 @@ html, body {
   position: relative;
 }
 
+.george-feedback-tooltip {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-2px);
+  background: var(--page-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  color: var(--text);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 10;
+}
+
+.george-feedback-btn-wrapper:hover .george-feedback-tooltip,
+.george-feedback-btn-wrapper:focus-within .george-feedback-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .george-feedback-btn.is-hidden {
   opacity: 0;
   pointer-events: none;
@@ -3351,13 +3375,14 @@ html, body {
 }
 
 .george-analytics-breakdown-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 140px 1fr 64px;
   align-items: center;
   gap: 12px;
 }
 
 .george-analytics-breakdown-label {
-  width: 80px;
+  width: auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3371,9 +3396,11 @@ html, body {
   border-radius: 999px;
 }
 
+.george-analytics-breakdown-dot.is-perfect { background: #14b8a6; }
 .george-analytics-breakdown-dot.is-good { background: #22c55e; }
-.george-analytics-breakdown-dot.is-okay { background: #eab308; }
-.george-analytics-breakdown-dot.is-bad { background: #ef4444; }
+.george-analytics-breakdown-dot.is-usable { background: #eab308; }
+.george-analytics-breakdown-dot.is-problematic { background: #f97316; }
+.george-analytics-breakdown-dot.is-unusable { background: #ef4444; }
 
 .george-analytics-breakdown-bar {
   flex: 1;
@@ -3389,12 +3416,14 @@ html, body {
   transition: width 0.3s ease;
 }
 
+.george-analytics-breakdown-fill.is-perfect { background: #14b8a6; }
 .george-analytics-breakdown-fill.is-good { background: #22c55e; }
-.george-analytics-breakdown-fill.is-okay { background: #eab308; }
-.george-analytics-breakdown-fill.is-bad { background: #ef4444; }
+.george-analytics-breakdown-fill.is-usable { background: #eab308; }
+.george-analytics-breakdown-fill.is-problematic { background: #f97316; }
+.george-analytics-breakdown-fill.is-unusable { background: #ef4444; }
 
 .george-analytics-breakdown-value {
-  width: 50px;
+  width: auto;
   text-align: right;
   font-size: 0.8rem;
   font-weight: 600;
@@ -3536,13 +3565,13 @@ html, body {
   transition: width 0.3s ease;
 }
 
-.george-analytics-tag-bar-bad {
+.george-analytics-tag-bar-unusable {
   height: 100%;
   background: #e57373;
   transition: width 0.3s ease;
 }
 
-.george-analytics-tag-bar-okay {
+.george-analytics-tag-bar-problematic {
   height: 100%;
   background: #ffb74d;
   transition: width 0.3s ease;
@@ -3555,11 +3584,11 @@ html, body {
   font-size: 0.7rem;
 }
 
-.george-analytics-tag-bad {
+.george-analytics-tag-unusable {
   color: #c62828;
 }
 
-.george-analytics-tag-okay {
+.george-analytics-tag-problematic {
   color: #ef6c00;
 }
 
@@ -3651,17 +3680,27 @@ html, body {
   flex-shrink: 0;
 }
 
+.george-analytics-feedback-icon.is-perfect {
+  background: rgba(20, 184, 166, 0.1);
+  color: #14b8a6;
+}
+
 .george-analytics-feedback-icon.is-good {
   background: rgba(34, 197, 94, 0.1);
   color: #22c55e;
 }
 
-.george-analytics-feedback-icon.is-okay {
+.george-analytics-feedback-icon.is-usable {
   background: rgba(234, 179, 8, 0.1);
   color: #eab308;
 }
 
-.george-analytics-feedback-icon.is-bad {
+.george-analytics-feedback-icon.is-problematic {
+  background: rgba(249, 115, 22, 0.1);
+  color: #f97316;
+}
+
+.george-analytics-feedback-icon.is-unusable {
   background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
 }
@@ -3694,17 +3733,27 @@ html, body {
   font-weight: 500;
 }
 
+.george-analytics-feedback-rating.is-perfect {
+  background: rgba(20, 184, 166, 0.1);
+  color: #0f766e;
+}
+
 .george-analytics-feedback-rating.is-good {
   background: rgba(34, 197, 94, 0.1);
   color: #16a34a;
 }
 
-.george-analytics-feedback-rating.is-okay {
+.george-analytics-feedback-rating.is-usable {
   background: rgba(234, 179, 8, 0.1);
   color: #ca8a04;
 }
 
-.george-analytics-feedback-rating.is-bad {
+.george-analytics-feedback-rating.is-problematic {
+  background: rgba(249, 115, 22, 0.1);
+  color: #c2410c;
+}
+
+.george-analytics-feedback-rating.is-unusable {
   background: rgba(239, 68, 68, 0.1);
   color: #dc2626;
 }

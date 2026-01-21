@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Frown, Meh, Smile } from 'lucide-react';
+import { Angry, Frown, Meh, Smile, Laugh } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import FeedbackPopover from './FeedbackPopover';
 
-export type FeedbackRating = 'bad' | 'okay' | 'good';
+export type FeedbackRating = 'unusable' | 'problematic' | 'usable' | 'good' | 'perfect';
 
 type MessageData = {
   sessionId: string;
@@ -33,9 +33,11 @@ const ratingConfig: Array<{
   Icon: typeof Frown;
   label: string;
 }> = [
-  { value: 'bad', Icon: Frown, label: 'Bad' },
-  { value: 'okay', Icon: Meh, label: 'Okay' },
+  { value: 'unusable', Icon: Angry, label: 'Unusable' },
+  { value: 'problematic', Icon: Frown, label: 'Problematic' },
+  { value: 'usable', Icon: Meh, label: 'Usable' },
   { value: 'good', Icon: Smile, label: 'Good' },
+  { value: 'perfect', Icon: Laugh, label: 'Perfect' },
 ];
 
 export default function FeedbackButtons({
@@ -57,9 +59,11 @@ export default function FeedbackButtons({
     maxHeight: number;
   } | null>(null);
   const buttonRefs = useRef<Record<FeedbackRating, HTMLButtonElement | null>>({
-    bad: null,
-    okay: null,
+    unusable: null,
+    problematic: null,
+    usable: null,
     good: null,
+    perfect: null,
   });
 
   const BUTTON_HEIGHT = 20;
@@ -259,6 +263,7 @@ export default function FeedbackButtons({
                   strokeWidth={isSelected ? 2.5 : 1.5}
                 />
               </button>
+              <span className="george-feedback-tooltip" role="tooltip">{label}</span>
             </div>
           );
         })}
