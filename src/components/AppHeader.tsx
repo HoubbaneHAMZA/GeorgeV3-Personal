@@ -30,6 +30,7 @@ export default function AppHeader() {
         <a href="/docs" className={`george-nav-link${pathname === '/docs' ? ' is-active' : ''}`}>Documentation</a>
         <a href="/faq" className={`george-nav-link${pathname === '/faq' ? ' is-active' : ''}`}>FAQ</a>
         <a href="/updates" className={`george-nav-link${pathname === '/updates' ? ' is-active' : ''}`}>Updates</a>
+        <a href="/analytics" className={`george-nav-link${pathname === '/analytics' ? ' is-active' : ''}`}>Analytics</a>
         <button
           type="button"
           className="george-signout"

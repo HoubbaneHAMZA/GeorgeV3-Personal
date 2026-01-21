@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
+import FeedbackButtons, { type FeedbackRating } from '@/components/FeedbackButtons';
 
 function CollapsibleStep({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -33,6 +34,8 @@ type AgentInputPayload = {
   conversation?: unknown;
 };
 
+// FeedbackRating is imported from FeedbackButtons
+
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
@@ -42,6 +45,12 @@ type ChatMessage = {
   isTraceOpen?: boolean;
   isSourcesOpen?: boolean;
   collapsedTools?: Record<string, boolean>;
+  interactionId?: string;
+  feedbackRating?: FeedbackRating;
+  feedbackReady?: boolean;
+  // Data needed to recreate interaction if deleted from Supabase
+  originalSessionId?: string;
+  originalUserInput?: string;
 };
 
 type AgentTraceData = {
@@ -57,6 +66,14 @@ type AgentTraceData = {
       output?: unknown;
     }>;
   };
+};
+type TraceQuery = {
+  callId: string;
+  tool: string;
+  query: string;
+  filters: unknown;
+  sources: string[];
+  output?: unknown;
 };
 
 type LocalAttachment = {
@@ -310,6 +327,7 @@ export default function Home() {
   const queryAnalysisEndpoint = '/api/query-analysis';
   const ticketFetchEndpoint = '/api/ticket-fetch';
   const costTrackerEndpoint = '/api/cost-tracker';
+  const agentInteractionsEndpoint = '/api/agent-interactions';
   const sessionStorageKey = useMemo(() => `george:session:${pathname}`, [pathname]);
   const messagesStorageKey = useMemo(() => `george:messages:${pathname}`, [pathname]);
   const [input, setInput] = useState('');
@@ -461,6 +479,36 @@ export default function Home() {
       };
     }
     return snapshot;
+  };
+  const mergeTraceData = (local?: AgentTraceData | null, remote?: AgentTraceData | null): AgentTraceData | undefined => {
+    if (!local && !remote) return undefined;
+    const merged: AgentTraceData = {};
+    if (local?.queryAnalysis) merged.queryAnalysis = { ...local.queryAnalysis };
+    if (remote?.queryAnalysis) merged.queryAnalysis = { ...remote.queryAnalysis };
+    if (local?.attachments) merged.attachments = { ...local.attachments };
+    if (remote?.attachments) merged.attachments = { ...remote.attachments };
+    const localQueries = local?.agentThinking?.queries || [];
+    const remoteQueries = remote?.agentThinking?.queries || [];
+    const byCallId = new Map<string, TraceQuery>();
+    for (const query of localQueries) {
+      byCallId.set(query.callId, { ...query, sources: [...(query.sources || [])] });
+    }
+    for (const query of remoteQueries) {
+      const existing = byCallId.get(query.callId);
+      if (existing) {
+        byCallId.set(query.callId, {
+          ...existing,
+          ...query,
+          sources: Array.from(new Set([...(existing.sources || []), ...(query.sources || [])]))
+        });
+      } else {
+        byCallId.set(query.callId, { ...query, sources: [...(query.sources || [])] });
+      }
+    }
+    if (byCallId.size > 0) {
+      merged.agentThinking = { queries: Array.from(byCallId.values()) };
+    }
+    return merged;
   };
   const buildSourcesFromTrace = (trace?: AgentTraceData): string[] => {
     if (!trace?.agentThinking?.queries) return [];
@@ -777,6 +825,7 @@ export default function Home() {
       if (!stored || messages.length > 0) return;
       const parsed = JSON.parse(stored) as ChatMessage[];
       if (Array.isArray(parsed) && parsed.length > 0) {
+        // Keep feedbackRating from localStorage - sync will update/clear as needed
         setMessages(parsed);
         setHasResponse(true);
         setStatusDone(true);
@@ -785,6 +834,85 @@ export default function Home() {
       // Ignore storage failures.
     }
   }, [messages.length, messagesStorageKey]);
+
+  // Sync feedback ratings from Supabase after loading messages from localStorage
+  const feedbackSyncedRef = useRef(false);
+  const [messagesLoadedFromStorage, setMessagesLoadedFromStorage] = useState(false);
+
+  // Mark when messages are loaded from localStorage
+  useEffect(() => {
+    if (messages.length > 0 && !messagesLoadedFromStorage) {
+      setMessagesLoadedFromStorage(true);
+    }
+  }, [messages.length, messagesLoadedFromStorage]);
+
+  useEffect(() => {
+    // Only run once after messages are loaded from localStorage
+    if (feedbackSyncedRef.current || !messagesLoadedFromStorage) return;
+
+    const interactionIds = messages
+      .filter((m) => m.interactionId)
+      .map((m) => m.interactionId!);
+
+    if (interactionIds.length === 0) {
+      feedbackSyncedRef.current = true;
+      return;
+    }
+
+    feedbackSyncedRef.current = true;
+
+    const syncFeedbackFromSupabase = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (!accessToken) return;
+
+        const response = await fetch(`/api/agent-interactions?ids=${interactionIds.join(',')}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+
+        if (!response.ok) return;
+
+        const { interactions } = await response.json();
+        if (!interactions || !Array.isArray(interactions)) return;
+
+        // Valid ratings for the current FeedbackButtons component
+        const validRatings: FeedbackRating[] = ['bad', 'okay', 'good'];
+        const isValidRating = (r: string | null | undefined): r is FeedbackRating =>
+          r !== null && r !== undefined && validRatings.includes(r as FeedbackRating);
+
+        // Create a map for quick lookup - only includes IDs that exist in Supabase
+        const feedbackMap = new Map<string, string | null>(
+          interactions.map((i: { id: string; feedback_rating: string | null }) => [i.id, i.feedback_rating])
+        );
+
+        // Update messages with fetched feedback
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (!m.interactionId) return m;
+
+            // If interaction exists in Supabase, use its rating (only if valid)
+            if (feedbackMap.has(m.interactionId)) {
+              const rating = feedbackMap.get(m.interactionId);
+              // Filter out old invalid ratings like 'very_good'
+              return { ...m, feedbackRating: isValidRating(rating) ? rating : undefined };
+            }
+
+            // If interaction was deleted from Supabase (not in response), clear the rating
+            if (m.feedbackRating) {
+              return { ...m, feedbackRating: undefined };
+            }
+
+            return m;
+          })
+        );
+      } catch (err) {
+        console.error('Failed to sync feedback from Supabase:', err);
+      }
+    };
+
+    syncFeedbackFromSupabase();
+  }, [messagesLoadedFromStorage, messages]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1943,9 +2071,18 @@ export default function Home() {
           const serverMs =
             typeof meta?.server_ms === 'number' ? Math.round(meta.server_ms) : undefined;
           const finalRoundTripMs = Math.round(performance.now() - startedAt);
-          const traceSnapshot = snapshotTraceData(traceBufferRef.current);
-          const sourcesForTrace = buildSourcesFromTrace(traceSnapshot);
+          const serverTrace = data && typeof data === 'object' ? (data as { trace?: AgentTraceData }).trace : undefined;
+          const mergedTrace = mergeTraceData(traceBufferRef.current, serverTrace);
+          traceBufferRef.current = mergedTrace || traceBufferRef.current;
+          const traceSnapshot = snapshotTraceData(mergedTrace);
+          const sourcesFromServer = Array.isArray((data as { sources?: unknown }).sources)
+            ? (data as { sources?: unknown }).sources as string[]
+            : [];
+          const sourcesForTrace = sourcesFromServer.length > 0
+            ? Array.from(new Set(sourcesFromServer.map((s) => String(s)).filter((s) => s.length > 0)))
+            : buildSourcesFromTrace(traceSnapshot);
           const timingInfo: TimingInfo = { round_trip_ms: finalRoundTripMs, server_ms: serverMs };
+          const finalSessionId = typeof data?.sessionId === 'string' ? data.sessionId : sessionId;
           setMessages((prev) => {
             if (prev.length === 0) {
               const fresh = createAssistantMessage(outputText);
@@ -1954,7 +2091,10 @@ export default function Home() {
                   ...fresh,
                   trace: traceSnapshot,
                   sources: sourcesForTrace.length > 0 ? sourcesForTrace : undefined,
-                  timing: timingInfo
+                  timing: timingInfo,
+                  feedbackReady: true,
+                  originalSessionId: finalSessionId || undefined,
+                  originalUserInput: cleanInput
                 }
               ];
             }
@@ -1967,7 +2107,10 @@ export default function Home() {
                   content,
                   trace: traceSnapshot,
                   sources: sourcesForTrace.length > 0 ? sourcesForTrace : undefined,
-                  timing: timingInfo
+                  timing: timingInfo,
+                  feedbackReady: true,
+                  originalSessionId: finalSessionId || next[i].originalSessionId,
+                  originalUserInput: cleanInput || next[i].originalUserInput
                 };
                 return next;
               }
@@ -1976,6 +2119,9 @@ export default function Home() {
             fallback.trace = traceSnapshot;
             fallback.sources = sourcesForTrace.length > 0 ? sourcesForTrace : undefined;
             fallback.timing = timingInfo;
+            fallback.feedbackReady = true;
+            fallback.originalSessionId = finalSessionId || undefined;
+            fallback.originalUserInput = cleanInput;
             next.push(fallback);
             return next;
           });
@@ -1985,6 +2131,60 @@ export default function Home() {
               attachmentCount: attachments.length
             });
           }
+
+          // Auto-log interaction to Supabase for feedback system
+          if (finalSessionId && outputText) {
+            const totalCostUsd = usageRecords.reduce((sum, record) => {
+              const value = typeof record.costUsd === 'number' ? record.costUsd : 0;
+              return sum + value;
+            }, 0);
+            const interactionPayload = {
+              session_id: finalSessionId,
+              user_input: cleanInput,
+              is_zendesk_ticket: detectedIsZendeskTicket,
+              ticket_id: detectedIsZendeskTicket ? cleanInput : undefined,
+              response_content: outputText,
+              response_sources: sourcesForTrace.length > 0 ? sourcesForTrace : undefined,
+              trace_data: traceSnapshot,
+              timing_server_ms: serverMs,
+              timing_roundtrip_ms: finalRoundTripMs,
+              cost_usd: totalCostUsd > 0 ? totalCostUsd : undefined,
+              attachments_count: attachments.length
+            };
+            void fetch(agentInteractionsEndpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`
+              },
+              body: JSON.stringify(interactionPayload)
+            }).then(async (res) => {
+              if (res.ok) {
+                const result = await res.json();
+                if (result.id) {
+                  // Update the last assistant message with the interaction ID and original data
+                  setMessages((prev) => {
+                    const next = [...prev];
+                    for (let i = next.length - 1; i >= 0; i -= 1) {
+                      if (next[i].role === 'assistant') {
+                        next[i] = {
+                          ...next[i],
+                          interactionId: result.id,
+                          originalSessionId: finalSessionId,
+                          originalUserInput: cleanInput
+                        };
+                        return next;
+                      }
+                    }
+                    return prev;
+                  });
+                }
+              }
+            }).catch((error) => {
+              console.warn('[agent_interactions] failed to log interaction', error);
+            });
+          }
+
           setLoading(false);
           setStatusDone(true);
           setActiveStatusId(null);
@@ -2899,21 +3099,50 @@ export default function Home() {
                           />
                         )}
                       </div>
-                      {message.role === 'assistant' && (hasSources || hasTrace) ? (
+                      {message.role === 'assistant' && (hasSources || hasTrace || message.interactionId || message.feedbackReady) ? (
                         <div className="george-chat-meta">
                           {hasSources ? (
                             <button
                               type="button"
-                              className="george-trace-toggle george-chat-meta-left"
+                              className="george-trace-toggle"
                               onClick={(event) => toggleMessageSources(index, event.currentTarget)}
                             >
                               Sources
                             </button>
                           ) : <span />}
+                          {message.feedbackReady ? (
+                            <FeedbackButtons
+                              interactionId={message.interactionId ?? null}
+                              currentRating={message.feedbackRating}
+                              messageData={message.originalSessionId && message.originalUserInput ? {
+                                sessionId: message.originalSessionId,
+                                userInput: message.originalUserInput,
+                                responseContent: message.content,
+                                responseSources: message.sources,
+                                traceData: message.trace,
+                                timingServerMs: message.timing?.server_ms,
+                                attachmentsCount: 0
+                              } : undefined}
+                              onFeedbackSubmit={(rating) => {
+                                setMessages((prev) => {
+                                  const next = [...prev];
+                                  next[index] = { ...next[index], feedbackRating: rating };
+                                  return next;
+                                });
+                              }}
+                              onNewInteractionCreated={(newId) => {
+                                setMessages((prev) => {
+                                  const next = [...prev];
+                                  next[index] = { ...next[index], interactionId: newId };
+                                  return next;
+                                });
+                              }}
+                            />
+                          ) : null}
                           {hasTrace ? (
                             <button
                               type="button"
-                              className="george-trace-toggle george-chat-meta-right"
+                              className="george-trace-toggle"
                               onClick={(event) => toggleMessageTrace(index, event.currentTarget)}
                             >
                               Trace · {typeof message.timing?.server_ms === 'number' ? `${(message.timing.server_ms / 1000).toFixed(2)}s` : 'n/a'}
