@@ -157,10 +157,20 @@ function readFileAsDataUrl(file: File): Promise<string> {
 function renderInlineMarkdown(escaped: string) {
   // Code spans first so we don't parse markdown inside them.
   const withCode = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Markdown links: [label](url)
+  const withLinks = withCode.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
   // Bold then italic (simple/common cases).
-  const withBold = withCode.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  const withBold = withLinks.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   const withItalic = withBold.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-  return withItalic;
+  // Bare URLs
+  const withBareUrls = withItalic.replace(
+    /(^|[\s(])((https?:\/\/)[^\s<]+)/g,
+    '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>'
+  );
+  return withBareUrls;
 }
 
 function renderMarkdownToHtml(markdown: string) {
@@ -543,7 +553,7 @@ export default function Home() {
         steps.agentThinking?.queries.map((q) =>
           q.tool.startsWith('vector_store_search_')
             ? q.tool.replace('vector_store_search_', '')
-            : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+            : q.tool.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
         ) || []
       )
     )
@@ -1281,7 +1291,7 @@ export default function Home() {
       const collapsedTools = traceQueries.reduce<Record<string, boolean>>((acc, q) => {
         const label = q.tool.startsWith('vector_store_search_')
           ? q.tool.replace('vector_store_search_', '')
-          : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+          : q.tool.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
         acc[label] = true;
         return acc;
       }, {});
@@ -3062,7 +3072,7 @@ export default function Home() {
                   const groupedTools = traceQueries.reduce<Record<string, typeof traceQueries>>((groups, q) => {
                     const label = q.tool.startsWith('vector_store_search_')
                       ? q.tool.replace('vector_store_search_', '')
-                      : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+                      : q.tool.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
                     if (!groups[label]) groups[label] = [];
                     groups[label].push(q);
                     return groups;
@@ -3366,7 +3376,7 @@ export default function Home() {
                 const groupedTools = traceQueries.reduce<Record<string, typeof traceQueries>>((groups, q) => {
                   const label = q.tool.startsWith('vector_store_search_')
                     ? q.tool.replace('vector_store_search_', '')
-                    : q.tool.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+                    : q.tool.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
                   if (!groups[label]) groups[label] = [];
                   groups[label].push(q);
                   return groups;

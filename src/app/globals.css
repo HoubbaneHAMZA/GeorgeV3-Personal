@@ -2691,6 +2691,16 @@ html, body {
   padding: 0;
 }
 
+.markdown a {
+  color: #1d4ed8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown a:hover {
+  color: #1e40af;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .george-header {
