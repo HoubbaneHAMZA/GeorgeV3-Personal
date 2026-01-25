@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // Create a server-side Supabase client
 function getSupabaseClient() {
@@ -27,10 +29,14 @@ export async function GET() {
   try {
     const supabase = getSupabaseClient();
 
+    // Debug: Check what Supabase URL we're connecting to
+    console.log('[FAQ API] Using Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log('[FAQ API] Has service role key:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+
     // Fetch QAIs with qai_age='new'
     const { data: qaiData, error: qaiError } = await supabase
       .from('dxo_qai_content_hashes')
-      .select('doc_id, exact_content, cluster_id, faq_ids, ticket_ids, faq_count, ticket_count, created_at, applicable_combinations')
+      .select('doc_id, exact_content, cluster_id, faq_ids, ticket_ids, faq_count, ticket_count, created_at, applicable_combinations, qai_age')
       .eq('qai_age', 'new')
       .order('created_at', { ascending: false })
       .limit(500);
@@ -42,7 +48,7 @@ export async function GET() {
 
     console.log('[FAQ API] QAIs count:', qaiData?.length || 0);
     if (qaiData && qaiData.length > 0) {
-      console.log('[FAQ API] First QAI:', JSON.stringify(qaiData[0], null, 2));
+      console.log('[FAQ API] First QAI doc_id:', qaiData[0].doc_id, 'qai_age:', qaiData[0].qai_age);
     }
 
     return NextResponse.json({

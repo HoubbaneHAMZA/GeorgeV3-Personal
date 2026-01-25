@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import yaml from 'yaml';
 
 // Metadata item structure from applicable_combinations
 interface MetadataItem {
@@ -209,17 +210,63 @@ function getOSName(os: string): string | null {
   return os;
 }
 
-// Parse exact_content JSON
+// Parse exact_content (YAML frontmatter + Markdown)
 function parseQAIContent(exactContent: string | null): QAIContent | null {
   if (!exactContent) return null;
+
   try {
+    // First try JSON (for backward compatibility)
     return JSON.parse(exactContent) as QAIContent;
   } catch {
-    return {
-      title: 'FAQ',
-      question: '',
-      answer: exactContent,
-    };
+    // Parse YAML frontmatter + Markdown format
+    try {
+      // Split by frontmatter delimiters
+      const frontmatterMatch = exactContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+
+      if (!frontmatterMatch) {
+        // No frontmatter, treat as plain text
+        return {
+          title: 'FAQ',
+          question: '',
+          answer: exactContent,
+        };
+      }
+
+      const [, yamlContent, markdownContent] = frontmatterMatch;
+
+      // Parse YAML frontmatter
+      const frontmatter = yaml.parse(yamlContent) || {};
+
+      // Extract title from markdown (first # heading)
+      const titleMatch = markdownContent.match(/^#\s+(.+?)(?:\n|$)/m);
+      const title = titleMatch ? titleMatch[1].trim() : 'FAQ';
+
+      // Extract answer (everything after the title)
+      let answer = markdownContent;
+      if (titleMatch) {
+        answer = markdownContent.substring(titleMatch[0].length).trim();
+      }
+
+      return {
+        title,
+        question: title, // Use title as question since they're the same in this format
+        answer,
+        category: frontmatter.category !== 'unspecified' ? frontmatter.category : undefined,
+        sub_category: frontmatter.sub_category !== 'unspecified' ? frontmatter.sub_category : undefined,
+        language: frontmatter.language !== 'unknown' ? frontmatter.language : undefined,
+        intervention_type: frontmatter.intervention_type !== 'unspecified' ? frontmatter.intervention_type : undefined,
+        intervention_detail: frontmatter.intervention_detail,
+        source_faq_ids: frontmatter.faq_ids || [],
+        source_ticket_ids: frontmatter.ticket_ids || [],
+      };
+    } catch (parseError) {
+      console.error('[FAQ] Parse error:', parseError);
+      return {
+        title: 'FAQ',
+        question: '',
+        answer: exactContent,
+      };
+    }
   }
 }
 
