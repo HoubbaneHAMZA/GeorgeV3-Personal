@@ -4,12 +4,16 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import yaml from 'yaml';
 
-// Metadata item structure from applicable_combinations
+// Metadata item structure from applicable_combinations (supports both formats)
 interface MetadataItem {
   os: string;
   software: string;
-  os_versions: string[];
-  software_versions: string[];
+  // Old format (arrays)
+  os_versions?: string[];
+  software_versions?: string[];
+  // New format (singular)
+  os_version?: string;
+  software_version?: string;
 }
 
 // Parsed QAI content structure
@@ -270,26 +274,115 @@ function parseQAIContent(exactContent: string | null): QAIContent | null {
   }
 }
 
-// Product badge component with OS-specific colors
-function ProductBadge({ meta }: { meta: MetadataItem }) {
-  const productName = getProductName(meta.software);
-  const osName = getOSName(meta.os);
+// Format versions array for display - sorts numerically and removes duplicates
+function formatVersions(versions: string[]): string {
+  if (versions.length === 0) return '';
+  // Sort numerically if possible, otherwise alphabetically
+  const sorted = [...versions].sort((a, b) => {
+    const numA = parseInt(a, 10);
+    const numB = parseInt(b, 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    return a.localeCompare(b);
+  });
+  return `(${sorted.join(', ')})`;
+}
 
-  if (!productName && !osName) return null;
+// Group and deduplicate applicable combinations
+interface GroupedCombination {
+  software: string;
+  softwareVersions: Set<string>;
+  os: string;
+  osVersions: Set<string>;
+}
 
-  // Determine OS class
-  const osLower = (meta.os || '').toLowerCase();
-  let osClass = 'product-pill';
-  if (osLower.includes('windows') || osLower === 'win') {
-    osClass = 'os-windows';
-  } else if (osLower.includes('macos') || osLower.includes('mac')) {
-    osClass = 'os-macos';
+function groupApplicableCombinations(combinations: MetadataItem[] | null): GroupedCombination[] {
+  if (!combinations || combinations.length === 0) return [];
+
+  // Group by software + OS (normalized)
+  const groups = new Map<string, GroupedCombination>();
+
+  for (const combo of combinations) {
+    const software = getProductName(combo.software) || '';
+    const os = getOSName(combo.os) || '';
+
+    if (!software && !os) continue;
+
+    const key = `${software}|${os}`;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        software,
+        softwareVersions: new Set(),
+        os,
+        osVersions: new Set(),
+      });
+    }
+
+    const group = groups.get(key)!;
+
+    // Add software versions (handle both array and singular formats)
+    if (combo.software_versions) {
+      for (const v of combo.software_versions) {
+        if (v && v !== 'unspecified') group.softwareVersions.add(v);
+      }
+    }
+    if (combo.software_version && combo.software_version !== 'unspecified') {
+      group.softwareVersions.add(combo.software_version);
+    }
+
+    // Add OS versions (handle both array and singular formats)
+    if (combo.os_versions) {
+      for (const v of combo.os_versions) {
+        if (v && v !== 'unspecified') group.osVersions.add(v);
+      }
+    }
+    if (combo.os_version && combo.os_version !== 'unspecified') {
+      group.osVersions.add(combo.os_version);
+    }
   }
 
+  return Array.from(groups.values());
+}
+
+// Product badges component - renders grouped combinations
+function ProductBadges({ combinations }: { combinations: MetadataItem[] | null }) {
+  const grouped = groupApplicableCombinations(combinations);
+
+  if (grouped.length === 0) return null;
+
   return (
-    <span className={`george-faq-pill ${osClass}`}>
-      {productName}{productName && osName ? ' • ' : ''}{osName}
-    </span>
+    <>
+      {grouped.map((group, idx) => {
+        const softwareVersions = formatVersions([...group.softwareVersions]);
+        const osVersions = formatVersions([...group.osVersions]);
+
+        // Determine OS class
+        let osClass = 'product-pill';
+        if (group.os.toLowerCase().includes('windows')) {
+          osClass = 'os-windows';
+        } else if (group.os.toLowerCase().includes('mac')) {
+          osClass = 'os-macos';
+        }
+
+        // Build display string
+        let display = '';
+        if (group.software) {
+          display += group.software;
+          if (softwareVersions) display += ` ${softwareVersions}`;
+        }
+        if (group.software && group.os) display += ' • ';
+        if (group.os) {
+          display += group.os;
+          if (osVersions) display += ` ${osVersions}`;
+        }
+
+        return (
+          <span key={idx} className={`george-faq-pill ${osClass}`}>
+            {display}
+          </span>
+        );
+      })}
+    </>
   );
 }
 
@@ -299,6 +392,7 @@ export default function FaqPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'new' | 'modified'>('new');
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -353,9 +447,26 @@ export default function FaqPage() {
     return content?.source_ticket_ids?.length || item.ticket_count || 0;
   };
 
+  // Helper to check if item is "modified" (has source FAQ IDs)
+  const isModifiedItem = (item: QAIRecord): boolean => {
+    const content = parseQAIContent(item.exact_content);
+    const faqCount = content?.source_faq_ids?.length || item.faq_count || 0;
+    return faqCount > 0;
+  };
+
   // Sort and filter items - more tickets = more important = higher in list
   const filteredItems = useMemo(() => {
     let items = [...qaiItems];
+
+    // Filter by type (new vs modified)
+    if (typeFilter !== 'all') {
+      items = items.filter((item) => {
+        const isModified = isModifiedItem(item);
+        if (typeFilter === 'new') return !isModified;
+        if (typeFilter === 'modified') return isModified;
+        return true;
+      });
+    }
 
     // Filter by search query if present
     if (searchQuery.trim()) {
@@ -379,7 +490,18 @@ export default function FaqPage() {
     items.sort((a, b) => getTicketCount(b) - getTicketCount(a));
 
     return items;
-  }, [qaiItems, searchQuery]);
+  }, [qaiItems, searchQuery, typeFilter]);
+
+  // Calculate counts for filter badges
+  const typeCounts = useMemo(() => {
+    const newCount = qaiItems.filter(item => !isModifiedItem(item)).length;
+    const modifiedCount = qaiItems.filter(item => isModifiedItem(item)).length;
+    return {
+      all: qaiItems.length,
+      new: newCount,
+      modified: modifiedCount,
+    };
+  }, [qaiItems]);
 
   const toggleExpand = (key: string) => {
     setExpandedIds((prev) => {
@@ -566,6 +688,63 @@ export default function FaqPage() {
           />
         </section>
 
+        <section className="george-faq-filters">
+          <button
+            type="button"
+            className={`george-faq-filter-btn ${typeFilter === 'all' ? 'is-active' : ''}`}
+            onClick={() => setTypeFilter('all')}
+          >
+            All <span className="george-faq-filter-count">{typeCounts.all}</span>
+          </button>
+          <button
+            type="button"
+            className={`george-faq-filter-btn is-new ${typeFilter === 'new' ? 'is-active' : ''}`}
+            onClick={() => setTypeFilter('new')}
+          >
+            New <span className="george-faq-filter-count">{typeCounts.new}</span>
+          </button>
+          <button
+            type="button"
+            className={`george-faq-filter-btn is-modified ${typeFilter === 'modified' ? 'is-active' : ''}`}
+            onClick={() => setTypeFilter('modified')}
+          >
+            Modified <span className="george-faq-filter-count">{typeCounts.modified}</span>
+          </button>
+        </section>
+
+        {/* Explanation of how FAQs are generated */}
+        <section className="george-faq-explainer">
+          <details className="george-faq-explainer-details">
+            <summary className="george-faq-explainer-summary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              How are these FAQs generated?
+            </summary>
+            <div className="george-faq-explainer-content">
+              <p>
+                These FAQs are automatically generated by analyzing resolved support tickets and combining them with existing knowledge base articles.
+              </p>
+              <div className="george-faq-explainer-types">
+                <div className="george-faq-explainer-type">
+                  <span className="george-faq-type-badge is-new">New</span>
+                  <p>
+                    A <strong>New</strong> FAQ represents a freshly discovered common issue. When multiple customers report similar problems in their support tickets, the system identifies the pattern and creates a new FAQ to address it.
+                  </p>
+                </div>
+                <div className="george-faq-explainer-type">
+                  <span className="george-faq-type-badge is-modified">Modified</span>
+                  <p>
+                    A <strong>Modified</strong> FAQ enhances an existing knowledge base article. When support tickets reveal additional insights or solutions related to an existing FAQ, the system enriches that article while preserving all original information.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </details>
+        </section>
+
         {loading && (
           <section className="george-faq-loading">
             <div className="george-faq-skeleton" />
@@ -619,9 +798,7 @@ export default function FaqPage() {
                     <div className="george-faq-meta-row">
                       {/* Product pills */}
                       <div className="george-faq-pills">
-                        {item.applicable_combinations?.map((meta, metaIdx) => (
-                          <ProductBadge key={metaIdx} meta={meta} />
-                        ))}
+                        <ProductBadges combinations={item.applicable_combinations} />
                       </div>
 
                       {/* Source counts and date */}
