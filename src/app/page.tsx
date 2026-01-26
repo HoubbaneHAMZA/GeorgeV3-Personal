@@ -3420,7 +3420,19 @@ export default function Home() {
                         </div>
                         <div className="george-trace-tools">
                           {Object.entries(groupedTools).map(([label, group]) => {
+                            const isSqlTool = group.some((q) => isTableOutput(q.output));
                             const totalSources = group.reduce((sum, q) => sum + q.sources.length, 0);
+                            const uniqueRows = (() => {
+                              const seen = new Set<string>();
+                              for (const q of group) {
+                                if (isTableOutput(q.output)) {
+                                  for (const row of q.output.rows) {
+                                    seen.add(JSON.stringify(row));
+                                  }
+                                }
+                              }
+                              return seen.size;
+                            })();
                             const isCollapsed = message.collapsedTools?.[label] ?? false;
                             return (
                               <div key={label} className="george-trace-tool">
@@ -3431,7 +3443,7 @@ export default function Home() {
                                 >
                                   <span className="george-trace-tool-name">{label}</span>
                                   <span className="george-trace-tool-summary">
-                                    {group.length} call{group.length !== 1 ? 's' : ''} • {totalSources} source{totalSources !== 1 ? 's' : ''}
+                                    {group.length} call{group.length !== 1 ? 's' : ''} • {isSqlTool ? `${uniqueRows} row${uniqueRows !== 1 ? 's' : ''}` : `${totalSources} source${totalSources !== 1 ? 's' : ''}`}
                                   </span>
                                   <span className={`george-trace-tool-chevron${isCollapsed ? '' : ' is-open'}`} aria-hidden="true">⌄</span>
                                 </button>
