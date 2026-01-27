@@ -858,7 +858,25 @@ export default function Home() {
 
       if (response.ok) {
         const data = await response.json();
-        setConversations(data.conversations || []);
+        const fetchedConversations = data.conversations || [];
+        setConversations(fetchedConversations);
+
+        // Check for orphaned localStorage data - if we have a sessionId that doesn't exist in the database
+        const storedSessionId = localStorage.getItem(sessionStorageKey);
+        if (storedSessionId && fetchedConversations.length >= 0) {
+          const sessionExists = fetchedConversations.some(
+            (conv: { session_id: string }) => conv.session_id === storedSessionId
+          );
+          if (!sessionExists) {
+            // Clear orphaned local data
+            console.log('[fetchConversations] Clearing orphaned localStorage data for session:', storedSessionId);
+            localStorage.removeItem(sessionStorageKey);
+            localStorage.removeItem(messagesStorageKey);
+            setSessionId(null);
+            setConversationId(null);
+            setMessages([]);
+          }
+        }
       } else if (response.status >= 500 && retries > 0) {
         // Retry on server errors (cold start, connection pool issues)
         await new Promise((r) => setTimeout(r, 1000));
@@ -873,7 +891,7 @@ export default function Home() {
     } finally {
       setConversationsLoading(false);
     }
-  }, []);
+  }, [sessionStorageKey, messagesStorageKey]);
 
   // Load conversations on mount
   useEffect(() => {
@@ -2281,11 +2299,13 @@ export default function Home() {
               return acc;
             }, {});
             const timestamp = new Date().toISOString();
+            const effectiveSessionId = (typeof data?.sessionId === 'string' && data.sessionId.trim()) ? data.sessionId : sessionId;
             const payload = {
               input: cleanInput,
               timestamp,
               totalCostUsd,
-              bySource
+              bySource,
+              sessionId: effectiveSessionId
             };
             console.log('[llm_usage][total]', payload);
             void fetch(costTrackerEndpoint, {

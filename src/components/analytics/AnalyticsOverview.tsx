@@ -1,6 +1,6 @@
 'use client';
 
-import { TrendingUp, MessageSquare, ThumbsUp, Clock } from 'lucide-react';
+import { TrendingUp, MessageSquare, ThumbsUp, Clock, DollarSign } from 'lucide-react';
 
 type OverviewData = {
   total_runs: number;
@@ -27,7 +27,7 @@ export default function AnalyticsOverview({ data, isLoading, error }: AnalyticsO
     return (
       <div className="george-analytics-overview">
         <div className="george-analytics-cards">
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="george-analytics-card is-loading">
               <div className="george-analytics-card-skeleton" />
             </div>
@@ -59,6 +59,12 @@ export default function AnalyticsOverview({ data, isLoading, error }: AnalyticsO
       subtext: 'interactions'
     },
     {
+      icon: DollarSign,
+      label: 'Avg Cost/Run',
+      value: `$${data.avg_cost.toFixed(4)}`,
+      subtext: 'per interaction'
+    },
+    {
       icon: MessageSquare,
       label: 'Feedback Rate',
       value: `${data.feedback_rate.toFixed(1)}%`,
@@ -72,7 +78,7 @@ export default function AnalyticsOverview({ data, isLoading, error }: AnalyticsO
     },
     {
       icon: Clock,
-      label: 'Avg Response Time',
+      label: 'Avg Time',
       value: data.avg_response_time > 1000
         ? `${(data.avg_response_time / 1000).toFixed(1)}s`
         : `${Math.round(data.avg_response_time)}ms`,
