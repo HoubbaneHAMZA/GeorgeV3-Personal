@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import AnalyticsOverview from '@/components/analytics/AnalyticsOverview';
 import AnalyticsTrends from '@/components/analytics/AnalyticsTrends';
 import AnalyticsTags from '@/components/analytics/AnalyticsTags';
+import AnalyticsCategories from '@/components/analytics/AnalyticsCategories';
 import AnalyticsFeedbackList from '@/components/analytics/AnalyticsFeedbackList';
-import { Download, Calendar, ChevronDown, User, Globe } from 'lucide-react';
+import { Download, Calendar, ChevronDown, User, Globe, MessageSquare, MessagesSquare } from 'lucide-react';
 
+type AnalyticsView = 'message' | 'conversation';
 type AnalyticsScope = 'global' | 'personal';
 
 type DateRange = {
@@ -17,7 +19,8 @@ type DateRange = {
   label: string;
 };
 
-type OverviewData = {
+// Message view types
+type MessageOverviewData = {
   total_runs: number;
   feedback_count: number;
   feedback_rate: number;
@@ -30,7 +33,7 @@ type OverviewData = {
   avg_response_time: number;
 };
 
-type TrendData = {
+type MessageTrendData = {
   date: string;
   total: number;
   unusable: number;
@@ -58,9 +61,9 @@ type FeedbackItem = {
   trace_data: unknown;
 };
 
-type AnalyticsBundle = {
-  overview: OverviewData;
-  trends: TrendData[];
+type MessageAnalyticsBundle = {
+  overview: MessageOverviewData;
+  trends: MessageTrendData[];
   tags: TagData[];
   feedback_list: {
     interactions: FeedbackItem[];
@@ -68,6 +71,62 @@ type AnalyticsBundle = {
     limit: number;
   };
 };
+
+// Conversation view types
+type ConversationOverviewData = {
+  total_conversations: number;
+  feedback_count: number;
+  feedback_rate: number;
+  solved_rate: number;
+  partially_solved_rate: number;
+  not_solved_rate: number;
+  avg_cost: number;
+  avg_exchanges: number;
+};
+
+type ConversationTrendData = {
+  date: string;
+  total: number;
+  solved: number;
+  partially_solved: number;
+  not_solved: number;
+};
+
+type CategoryData = {
+  category: string;
+  count: number;
+  solved: number;
+  partially_solved: number;
+  not_solved: number;
+};
+
+type ConversationItem = {
+  id: string;
+  title: string;
+  category: string | null;
+  sub_category: string | null;
+  feedback_rating: 'solved' | 'partially_solved' | 'not_solved';
+  feedback_comment: string | null;
+  message_count: number;
+  created_at: string;
+};
+
+type ConversationAnalyticsBundle = {
+  overview: ConversationOverviewData;
+  trends: ConversationTrendData[];
+  categories: CategoryData[];
+  feedback_list: {
+    conversations: ConversationItem[];
+    page: number;
+    limit: number;
+  };
+};
+
+type AnalyticsBundle = MessageAnalyticsBundle | ConversationAnalyticsBundle;
+
+function isConversationBundle(bundle: AnalyticsBundle): bundle is ConversationAnalyticsBundle {
+  return 'categories' in bundle;
+}
 
 const DATE_PRESETS: { label: string; getDates: () => { from: string; to: string } }[] = [
   {
@@ -105,6 +164,7 @@ const DATE_PRESETS: { label: string; getDates: () => { from: string; to: string 
 
 export default function AnalyticsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange>(() => {
     const preset = DATE_PRESETS[1]; // Default to last 30 days
@@ -119,8 +179,26 @@ export default function AnalyticsPage() {
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [ratingFilter, setRatingFilter] = useState<string>('');
   const [page, setPage] = useState(1);
-  const [scope, setScope] = useState<AnalyticsScope>('global');
+
+  // Read initial values from URL params
+  const urlView = searchParams.get('view');
+  const urlScope = searchParams.get('scope');
+  const [scope, setScope] = useState<AnalyticsScope>(() =>
+    urlScope === 'personal' || urlScope === 'global' ? urlScope : 'global'
+  );
+  const [view, setView] = useState<AnalyticsView>(() =>
+    urlView === 'message' || urlView === 'conversation' ? urlView : 'message'
+  );
   const limit = 10;
+
+  // Update URL when view or scope changes
+  const updateUrl = useCallback((newView: AnalyticsView, newScope: AnalyticsScope) => {
+    const params = new URLSearchParams();
+    if (newView !== 'message') params.set('view', newView);
+    if (newScope !== 'global') params.set('scope', newScope);
+    const queryString = params.toString();
+    router.replace(`/analytics${queryString ? `?${queryString}` : ''}`, { scroll: false });
+  }, [router]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -141,9 +219,16 @@ export default function AnalyticsPage() {
     setShowDatePicker(false);
   }, []);
 
+  // Reset page and rating filter when view, date range, or scope changes
   useEffect(() => {
     setPage(1);
-  }, [dateRange.from, dateRange.to, ratingFilter, scope]);
+    setRatingFilter('');
+  }, [dateRange.from, dateRange.to, scope, view]);
+
+  // Reset page when rating filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [ratingFilter]);
 
   const handleExport = useCallback(async (format: 'json' | 'csv') => {
     if (!accessToken) return;
@@ -153,6 +238,7 @@ export default function AnalyticsPage() {
     if (dateRange.to) params.set('to', dateRange.to);
     params.set('format', format);
     params.set('scope', scope);
+    params.set('view', view);
 
     try {
       const response = await fetch(`/api/feedback-analytics/export?${params}`, {
@@ -168,7 +254,7 @@ export default function AnalyticsPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `feedback-export-${new Date().toISOString().split('T')[0]}.${format}`;
+      a.download = `${view}-export-${new Date().toISOString().split('T')[0]}.${format}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -177,7 +263,7 @@ export default function AnalyticsPage() {
       console.error('Export error:', err);
     }
     setShowExportMenu(false);
-  }, [accessToken, dateRange, scope]);
+  }, [accessToken, dateRange, scope, view]);
 
   useEffect(() => {
     const fetchBundle = async () => {
@@ -193,6 +279,7 @@ export default function AnalyticsPage() {
       params.set('page', String(page));
       params.set('limit', String(limit));
       params.set('scope', scope);
+      params.set('view', view);
 
       try {
         const response = await fetch(`/api/feedback-analytics/bundle?${params}`, {
@@ -213,7 +300,7 @@ export default function AnalyticsPage() {
     };
 
     fetchBundle();
-  }, [accessToken, dateRange.from, dateRange.to, ratingFilter, page, limit, scope]);
+  }, [accessToken, dateRange.from, dateRange.to, ratingFilter, page, limit, scope, view]);
 
   if (isLoading) {
     return (
@@ -223,17 +310,42 @@ export default function AnalyticsPage() {
     );
   }
 
+  // Determine which data to show based on view
+  const isConversation = view === 'conversation' && bundle && isConversationBundle(bundle);
+  const conversationBundle = isConversation ? bundle as ConversationAnalyticsBundle : null;
+  const messageBundle = !isConversation && bundle ? bundle as MessageAnalyticsBundle : null;
+
   return (
     <main className="george-analytics">
           <div className="george-analytics-header">
             <h1 className="george-analytics-title">Analytics Dashboard</h1>
             <div className="george-analytics-actions">
+              {/* View Toggle */}
+              <div className="george-analytics-view-toggle">
+                <button
+                  type="button"
+                  className={`george-analytics-view-btn${view === 'message' ? ' is-active' : ''}`}
+                  onClick={() => { setView('message'); updateUrl('message', scope); }}
+                >
+                  <MessageSquare size={14} />
+                  <span>Per Message</span>
+                </button>
+                <button
+                  type="button"
+                  className={`george-analytics-view-btn${view === 'conversation' ? ' is-active' : ''}`}
+                  onClick={() => { setView('conversation'); updateUrl('conversation', scope); }}
+                >
+                  <MessagesSquare size={14} />
+                  <span>Per Conversation</span>
+                </button>
+              </div>
+
               {/* Scope Toggle */}
               <div className="george-analytics-scope-toggle">
                 <button
                   type="button"
                   className={`george-analytics-scope-btn${scope === 'personal' ? ' is-active' : ''}`}
-                  onClick={() => setScope('personal')}
+                  onClick={() => { setScope('personal'); updateUrl(view, 'personal'); }}
                 >
                   <User size={14} />
                   <span>My Analytics</span>
@@ -241,7 +353,7 @@ export default function AnalyticsPage() {
                 <button
                   type="button"
                   className={`george-analytics-scope-btn${scope === 'global' ? ' is-active' : ''}`}
-                  onClick={() => setScope('global')}
+                  onClick={() => { setScope('global'); updateUrl(view, 'global'); }}
                 >
                   <Globe size={14} />
                   <span>Global</span>
@@ -314,24 +426,38 @@ export default function AnalyticsPage() {
                 data={bundle?.overview ?? null}
                 isLoading={bundleLoading}
                 error={bundleError}
+                view={view}
               />
 
               <AnalyticsTrends
                 data={bundle?.trends ?? []}
                 isLoading={bundleLoading}
                 error={bundleError}
+                view={view}
               />
 
               <div className="george-analytics-row">
-                <AnalyticsTags
-                  data={bundle?.tags ?? []}
-                  isLoading={bundleLoading}
-                  error={bundleError}
-                />
+                {view === 'conversation' ? (
+                  <AnalyticsCategories
+                    data={conversationBundle?.categories ?? []}
+                    isLoading={bundleLoading}
+                    error={bundleError}
+                  />
+                ) : (
+                  <AnalyticsTags
+                    data={messageBundle?.tags ?? []}
+                    isLoading={bundleLoading}
+                    error={bundleError}
+                  />
+                )}
               </div>
 
               <AnalyticsFeedbackList
-                data={bundle?.feedback_list?.interactions ?? []}
+                data={
+                  view === 'conversation'
+                    ? conversationBundle?.feedback_list?.conversations ?? []
+                    : messageBundle?.feedback_list?.interactions ?? []
+                }
                 isLoading={bundleLoading}
                 error={bundleError}
                 page={page}
@@ -339,6 +465,7 @@ export default function AnalyticsPage() {
                 ratingFilter={ratingFilter}
                 onRatingFilterChange={setRatingFilter}
                 onPageChange={setPage}
+                view={view}
               />
             </>
           )}
