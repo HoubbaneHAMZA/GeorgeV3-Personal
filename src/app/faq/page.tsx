@@ -287,38 +287,52 @@ function formatVersions(versions: string[]): string {
   return `(${sorted.join(', ')})`;
 }
 
-// Group and deduplicate applicable combinations
+// Group and deduplicate applicable combinations - grouped by software
 interface GroupedCombination {
   software: string;
   softwareVersions: Set<string>;
-  os: string;
-  osVersions: Set<string>;
+  osMap: Map<string, Set<string>>; // OS name -> OS versions
 }
 
 function groupApplicableCombinations(combinations: MetadataItem[] | null): GroupedCombination[] {
   if (!combinations || combinations.length === 0) return [];
 
-  // Group by software + OS (normalized)
+  // Group by software only (combine all OS types with their versions)
   const groups = new Map<string, GroupedCombination>();
 
   for (const combo of combinations) {
     const software = getProductName(combo.software) || '';
     const os = getOSName(combo.os) || '';
 
-    if (!software && !os) continue;
+    if (!software) continue;
 
-    const key = `${software}|${os}`;
-
-    if (!groups.has(key)) {
-      groups.set(key, {
+    if (!groups.has(software)) {
+      groups.set(software, {
         software,
         softwareVersions: new Set(),
-        os,
-        osVersions: new Set(),
+        osMap: new Map(),
       });
     }
 
-    const group = groups.get(key)!;
+    const group = groups.get(software)!;
+
+    // Add OS and its versions
+    if (os) {
+      if (!group.osMap.has(os)) {
+        group.osMap.set(os, new Set());
+      }
+      const osVersions = group.osMap.get(os)!;
+      
+      // Add OS versions (handle both array and singular formats)
+      if (combo.os_versions) {
+        for (const v of combo.os_versions) {
+          if (v && v !== 'unspecified') osVersions.add(v);
+        }
+      }
+      if (combo.os_version && combo.os_version !== 'unspecified') {
+        osVersions.add(combo.os_version);
+      }
+    }
 
     // Add software versions (handle both array and singular formats)
     if (combo.software_versions) {
@@ -328,16 +342,6 @@ function groupApplicableCombinations(combinations: MetadataItem[] | null): Group
     }
     if (combo.software_version && combo.software_version !== 'unspecified') {
       group.softwareVersions.add(combo.software_version);
-    }
-
-    // Add OS versions (handle both array and singular formats)
-    if (combo.os_versions) {
-      for (const v of combo.os_versions) {
-        if (v && v !== 'unspecified') group.osVersions.add(v);
-      }
-    }
-    if (combo.os_version && combo.os_version !== 'unspecified') {
-      group.osVersions.add(combo.os_version);
     }
   }
 
@@ -354,30 +358,26 @@ function ProductBadges({ combinations }: { combinations: MetadataItem[] | null }
     <>
       {grouped.map((group, idx) => {
         const softwareVersions = formatVersions([...group.softwareVersions]);
-        const osVersions = formatVersions([...group.osVersions]);
+        
+        // Build OS string with versions: "Windows (10, 11), macOS (13, 14)"
+        const osEntries = [...group.osMap.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([osName, versions]) => {
+            const versionStr = formatVersions([...versions]);
+            return versionStr ? `${osName} ${versionStr}` : osName;
+          });
 
-        // Determine OS class
-        let osClass = 'product-pill';
-        if (group.os.toLowerCase().includes('windows')) {
-          osClass = 'os-windows';
-        } else if (group.os.toLowerCase().includes('mac')) {
-          osClass = 'os-macos';
+        // Build display string: "PhotoLab (6, 7, 8) • Windows (10, 11), macOS (13, 14)"
+        let display = group.software;
+        if (softwareVersions) {
+          display += ` ${softwareVersions}`;
         }
-
-        // Build display string
-        let display = '';
-        if (group.software) {
-          display += group.software;
-          if (softwareVersions) display += ` ${softwareVersions}`;
-        }
-        if (group.software && group.os) display += ' • ';
-        if (group.os) {
-          display += group.os;
-          if (osVersions) display += ` ${osVersions}`;
+        if (osEntries.length > 0) {
+          display += ` • ${osEntries.join(', ')}`;
         }
 
         return (
-          <span key={idx} className={`george-faq-pill ${osClass}`}>
+          <span key={idx} className="george-faq-pill product-pill">
             {display}
           </span>
         );
@@ -393,6 +393,7 @@ export default function FaqPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'new' | 'modified'>('new');
+  const [showMetadata, setShowMetadata] = useState(true);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -689,26 +690,43 @@ export default function FaqPage() {
         </section>
 
         <section className="george-faq-filters">
+          <div className="george-faq-filter-group">
+            <button
+              type="button"
+              className={`george-faq-filter-btn ${typeFilter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setTypeFilter('all')}
+            >
+              All <span className="george-faq-filter-count">{typeCounts.all}</span>
+            </button>
+            <button
+              type="button"
+              className={`george-faq-filter-btn is-new ${typeFilter === 'new' ? 'is-active' : ''}`}
+              onClick={() => setTypeFilter('new')}
+            >
+              New <span className="george-faq-filter-count">{typeCounts.new}</span>
+            </button>
+            <button
+              type="button"
+              className={`george-faq-filter-btn is-modified ${typeFilter === 'modified' ? 'is-active' : ''}`}
+              onClick={() => setTypeFilter('modified')}
+            >
+              Modified <span className="george-faq-filter-count">{typeCounts.modified}</span>
+            </button>
+          </div>
+
           <button
             type="button"
-            className={`george-faq-filter-btn ${typeFilter === 'all' ? 'is-active' : ''}`}
-            onClick={() => setTypeFilter('all')}
+            className={`george-faq-metadata-toggle ${showMetadata ? 'is-active' : ''}`}
+            onClick={() => setShowMetadata(!showMetadata)}
+            title={showMetadata ? 'Hide product & version info' : 'Show product & version info'}
           >
-            All <span className="george-faq-filter-count">{typeCounts.all}</span>
-          </button>
-          <button
-            type="button"
-            className={`george-faq-filter-btn is-new ${typeFilter === 'new' ? 'is-active' : ''}`}
-            onClick={() => setTypeFilter('new')}
-          >
-            New <span className="george-faq-filter-count">{typeCounts.new}</span>
-          </button>
-          <button
-            type="button"
-            className={`george-faq-filter-btn is-modified ${typeFilter === 'modified' ? 'is-active' : ''}`}
-            onClick={() => setTypeFilter('modified')}
-          >
-            Modified <span className="george-faq-filter-count">{typeCounts.modified}</span>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="1" y="3" width="14" height="2" rx="1" fill="currentColor"/>
+              <rect x="1" y="7" width="10" height="2" rx="1" fill="currentColor"/>
+              <rect x="1" y="11" width="6" height="2" rx="1" fill="currentColor"/>
+            </svg>
+            <span>Metadata</span>
+            <span className={`george-faq-toggle-indicator ${showMetadata ? 'is-on' : ''}`} />
           </button>
         </section>
 
@@ -725,7 +743,7 @@ export default function FaqPage() {
             <div className="george-faq-process-content">
               {/* Process Flow Diagram */}
               <div className="george-faq-flow">
-                {/* Step 1: Sources */}
+                {/* Step 1: Input */}
                 <div className="george-faq-flow-step">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -738,71 +756,84 @@ export default function FaqPage() {
                       <path d="M8 20H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Support Tickets</div>
-                  <div className="george-faq-flow-desc">Resolved customer conversations</div>
+                  <div className="george-faq-flow-label">Tickets</div>
+                  <div className="george-faq-flow-desc">Customer conversations</div>
                 </div>
 
                 <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
 
-                {/* Step 2: AI Processing */}
-                <div className="george-faq-flow-step is-highlight">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <circle cx="16" cy="16" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                      <circle cx="16" cy="16" r="4" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M16 2V6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M16 26V30" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M2 16H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M26 16H30" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                  <div className="george-faq-flow-label">AI Analysis</div>
-                  <div className="george-faq-flow-desc">Pattern recognition & clustering</div>
-                </div>
-
-                <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-
-                {/* Step 3: Knowledge Base */}
+                {/* Step 2: Analyze */}
                 <div className="george-faq-flow-step">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <path d="M6 4H22L26 8V28H6V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M22 4V8H26" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M10 14H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M10 18H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M10 22H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <circle cx="16" cy="16" r="10" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M16 10V16L20 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Knowledge Base</div>
-                  <div className="george-faq-flow-desc">Existing support articles</div>
+                  <div className="george-faq-flow-label">Analyze</div>
+                  <div className="george-faq-flow-desc">AI reads each ticket</div>
                 </div>
 
                 <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
 
-                {/* Step 4: Output */}
+                {/* Step 3: Group Similar */}
+                <div className="george-faq-flow-step">
+                  <div className="george-faq-flow-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                      <circle cx="10" cy="13" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                      <circle cx="22" cy="13" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                      <circle cx="16" cy="22" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                    </svg>
+                  </div>
+                  <div className="george-faq-flow-label">Group Similar</div>
+                  <div className="george-faq-flow-desc">Find related questions</div>
+                </div>
+
+                <div className="george-faq-flow-connector">
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+
+                {/* Step 4: Merge */}
+                <div className="george-faq-flow-step">
+                  <div className="george-faq-flow-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                      <path d="M8 8L16 16M8 24L16 16M24 16H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <circle cx="16" cy="16" r="3" fill="currentColor"/>
+                    </svg>
+                  </div>
+                  <div className="george-faq-flow-label">Merge</div>
+                  <div className="george-faq-flow-desc">Combine into one answer</div>
+                </div>
+
+                <div className="george-faq-flow-connector">
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+
+                {/* Step 5: Output */}
                 <div className="george-faq-flow-step is-result">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <path d="M16 4L28 10V22L16 28L4 22V10L16 4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M16 16L28 10" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M16 16L4 10" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M16 16V28" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M9 4H19L25 10V28H9V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                      <path d="M19 4V10H25" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                      <path d="M13 16H21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <path d="M13 20H21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <path d="M13 24H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Generated FAQs</div>
-                  <div className="george-faq-flow-desc">Ready for review</div>
+                  <div className="george-faq-flow-label">FAQ Ready</div>
+                  <div className="george-faq-flow-desc">Review & publish</div>
                 </div>
               </div>
 
@@ -883,9 +914,11 @@ export default function FaqPage() {
                   <div className="george-faq-card-meta">
                     <div className="george-faq-meta-row">
                       {/* Product pills */}
-                      <div className="george-faq-pills">
-                        <ProductBadges combinations={item.applicable_combinations} />
-                      </div>
+                      {showMetadata && (
+                        <div className="george-faq-pills">
+                          <ProductBadges combinations={item.applicable_combinations} />
+                        </div>
+                      )}
 
                       {/* Source counts and date */}
                       <div className="george-faq-info">
