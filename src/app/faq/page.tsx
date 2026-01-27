@@ -43,6 +43,7 @@ interface QAIRecord {
   ticket_count: number;
   created_at: string;
   applicable_combinations: MetadataItem[] | null;
+  qai_age: 'new' | 'old' | null;
 }
 
 // Edit form state
@@ -257,7 +258,7 @@ function parseQAIContent(exactContent: string | null): QAIContent | null {
         sub_category: frontmatter.sub_category !== 'unspecified' ? frontmatter.sub_category : undefined,
         language: frontmatter.language !== 'unknown' ? frontmatter.language : undefined,
         intervention_type: frontmatter.intervention_type !== 'unspecified' ? frontmatter.intervention_type : undefined,
-        intervention_detail: frontmatter.intervention_detail,
+        intervention_detail: frontmatter.intervention_detail !== 'unspecified' ? frontmatter.intervention_detail : undefined,
         source_faq_ids: frontmatter.faq_ids || [],
         source_ticket_ids: frontmatter.ticket_ids || [],
       };
@@ -394,6 +395,16 @@ export default function FaqPage() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'new' | 'modified'>('new');
   const [showAllMetadata, setShowAllMetadata] = useState(false);
 
+  // Advanced filters
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [subCategoryFilter, setSubCategoryFilter] = useState<string>('');
+  const [softwareFilter, setSoftwareFilter] = useState<string>('');
+  const [softwareVersionFilter, setSoftwareVersionFilter] = useState<string>('');
+  const [osFilter, setOsFilter] = useState<string>('');
+  const [osVersionFilter, setOsVersionFilter] = useState<string>('');
+  const [interventionTypeFilter, setInterventionTypeFilter] = useState<string>('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>({
@@ -435,6 +446,116 @@ export default function FaqPage() {
   useEffect(() => {
     fetchFaqs();
   }, [fetchFaqs]);
+
+  // Extract available filter options from data
+  const filterOptions = useMemo(() => {
+    const categories = new Set<string>();
+    const subCategories = new Map<string, Set<string>>(); // category -> sub-categories
+    const software = new Map<string, Set<string>>(); // software name -> versions
+    const os = new Map<string, Set<string>>(); // OS name -> versions
+    const interventionTypes = new Set<string>();
+
+    for (const item of qaiItems) {
+      const content = parseQAIContent(item.exact_content);
+
+      // Extract category and sub-category
+      if (content?.category) {
+        categories.add(content.category);
+        if (content.sub_category) {
+          if (!subCategories.has(content.category)) {
+            subCategories.set(content.category, new Set());
+          }
+          subCategories.get(content.category)!.add(content.sub_category);
+        }
+      }
+
+      // Extract intervention type
+      if (content?.intervention_type) {
+        interventionTypes.add(content.intervention_type);
+      }
+
+      // Extract software and OS from applicable_combinations
+      if (item.applicable_combinations) {
+        for (const combo of item.applicable_combinations) {
+          const softwareName = getProductName(combo.software);
+          if (softwareName) {
+            if (!software.has(softwareName)) {
+              software.set(softwareName, new Set());
+            }
+            // Add versions (handle both array and singular formats)
+            if (combo.software_versions) {
+              for (const v of combo.software_versions) {
+                if (v && v !== 'unspecified') software.get(softwareName)!.add(v);
+              }
+            }
+            if (combo.software_version && combo.software_version !== 'unspecified') {
+              software.get(softwareName)!.add(combo.software_version);
+            }
+          }
+
+          const osName = getOSName(combo.os);
+          if (osName) {
+            if (!os.has(osName)) {
+              os.set(osName, new Set());
+            }
+            // Add versions (handle both array and singular formats)
+            if (combo.os_versions) {
+              for (const v of combo.os_versions) {
+                if (v && v !== 'unspecified') os.get(osName)!.add(v);
+              }
+            }
+            if (combo.os_version && combo.os_version !== 'unspecified') {
+              os.get(osName)!.add(combo.os_version);
+            }
+          }
+        }
+      }
+    }
+
+    // Convert to sorted arrays
+    return {
+      categories: [...categories].sort(),
+      subCategories: new Map([...subCategories.entries()].map(([k, v]) => [k, [...v].sort()])),
+      software: new Map([...software.entries()].sort().map(([k, v]) => [k, [...v].sort((a, b) => {
+        const numA = parseInt(a, 10);
+        const numB = parseInt(b, 10);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return a.localeCompare(b);
+      })])),
+      os: new Map([...os.entries()].sort().map(([k, v]) => [k, [...v].sort((a, b) => {
+        const numA = parseInt(a, 10);
+        const numB = parseInt(b, 10);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return a.localeCompare(b);
+      })])),
+      interventionTypes: [...interventionTypes].sort(),
+    };
+  }, [qaiItems]);
+
+  // Reset dependent filters when parent changes
+  useEffect(() => {
+    if (categoryFilter && !filterOptions.subCategories.has(categoryFilter)) {
+      setSubCategoryFilter('');
+    } else if (!categoryFilter) {
+      setSubCategoryFilter('');
+    }
+  }, [categoryFilter, filterOptions.subCategories]);
+
+  useEffect(() => {
+    if (softwareFilter && !filterOptions.software.has(softwareFilter)) {
+      setSoftwareVersionFilter('');
+    } else if (!softwareFilter) {
+      setSoftwareVersionFilter('');
+    }
+  }, [softwareFilter, filterOptions.software]);
+
+  useEffect(() => {
+    if (osFilter && !filterOptions.os.has(osFilter)) {
+      setOsVersionFilter('');
+    } else if (!osFilter) {
+      setOsVersionFilter('');
+    }
+  }, [osFilter, filterOptions.os]);
 
   // Helper to get ticket count from item
   const getTicketCount = (item: QAIRecord): number => {
@@ -481,11 +602,83 @@ export default function FaqPage() {
       });
     }
 
+    // Filter by category
+    if (categoryFilter) {
+      items = items.filter((item) => {
+        const content = parseQAIContent(item.exact_content);
+        return content?.category === categoryFilter;
+      });
+    }
+
+    // Filter by sub-category
+    if (subCategoryFilter) {
+      items = items.filter((item) => {
+        const content = parseQAIContent(item.exact_content);
+        return content?.sub_category === subCategoryFilter;
+      });
+    }
+
+    // Filter by intervention type
+    if (interventionTypeFilter) {
+      items = items.filter((item) => {
+        const content = parseQAIContent(item.exact_content);
+        return content?.intervention_type === interventionTypeFilter;
+      });
+    }
+
+    // Filter by software (and optionally version)
+    if (softwareFilter) {
+      items = items.filter((item) => {
+        if (!item.applicable_combinations) return false;
+        return item.applicable_combinations.some((combo) => {
+          const softwareName = getProductName(combo.software);
+          if (softwareName !== softwareFilter) return false;
+
+          // If version filter is set, check version too
+          if (softwareVersionFilter) {
+            const versions = new Set<string>();
+            if (combo.software_versions) {
+              combo.software_versions.forEach(v => versions.add(v));
+            }
+            if (combo.software_version) {
+              versions.add(combo.software_version);
+            }
+            return versions.has(softwareVersionFilter);
+          }
+          return true;
+        });
+      });
+    }
+
+    // Filter by OS (and optionally version)
+    if (osFilter) {
+      items = items.filter((item) => {
+        if (!item.applicable_combinations) return false;
+        return item.applicable_combinations.some((combo) => {
+          const osName = getOSName(combo.os);
+          if (osName !== osFilter) return false;
+
+          // If version filter is set, check version too
+          if (osVersionFilter) {
+            const versions = new Set<string>();
+            if (combo.os_versions) {
+              combo.os_versions.forEach(v => versions.add(v));
+            }
+            if (combo.os_version) {
+              versions.add(combo.os_version);
+            }
+            return versions.has(osVersionFilter);
+          }
+          return true;
+        });
+      });
+    }
+
     // Sort by ticket count descending (more important first)
     items.sort((a, b) => getTicketCount(b) - getTicketCount(a));
 
     return items;
-  }, [qaiItems, searchQuery, typeFilter]);
+  }, [qaiItems, searchQuery, typeFilter, categoryFilter, subCategoryFilter, interventionTypeFilter, softwareFilter, softwareVersionFilter, osFilter, osVersionFilter]);
 
   // Calculate counts for filter badges
   const typeCounts = useMemo(() => {
@@ -698,55 +891,246 @@ export default function FaqPage() {
           </div>
         </section>
 
-        <section className="george-faq-search">
-          <input
-            type="text"
-            className="george-faq-search-input"
-            placeholder="Search FAQs..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </section>
+        <section className="george-faq-header">
+          <div className="george-faq-header-top">
+            <h1 className="george-faq-title">FAQ Management</h1>
+            <div className="george-faq-header-actions">
+              <button
+                type="button"
+                className={`george-faq-metadata-toggle ${showAllMetadata ? 'is-active' : ''}`}
+                onClick={() => setShowAllMetadata(!showAllMetadata)}
+                title={showAllMetadata ? 'Hide all metadata' : 'Show all metadata'}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="1" y="3" width="14" height="2" rx="1" fill="currentColor"/>
+                  <rect x="1" y="7" width="10" height="2" rx="1" fill="currentColor"/>
+                  <rect x="1" y="11" width="6" height="2" rx="1" fill="currentColor"/>
+                </svg>
+                <span>Show All Metadata</span>
+                <span className={`george-faq-toggle-indicator ${showAllMetadata ? 'is-on' : ''}`} />
+              </button>
+            </div>
+          </div>
 
-        <section className="george-faq-filters">
-          <div className="george-faq-filter-group">
+          <div className="george-faq-controls">
+            <div className="george-faq-search-wrapper">
+              <svg className="george-faq-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input
+                type="text"
+                className="george-faq-search-input"
+                placeholder="Search FAQs by title, question, answer, or product..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="george-faq-search-clear"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Status Filter - All, New (from tickets only), Modified (from existing FAQs) */}
+            <div className="george-faq-filter-group">
+              <span className="george-faq-filter-label-inline">Status:</span>
+              <button
+                type="button"
+                className={`george-faq-filter-btn ${typeFilter === 'all' ? 'is-active' : ''}`}
+                onClick={() => setTypeFilter('all')}
+              >
+                All <span className="george-faq-filter-count">{typeCounts.all}</span>
+              </button>
+              <button
+                type="button"
+                className={`george-faq-filter-btn is-new ${typeFilter === 'new' ? 'is-active' : ''}`}
+                onClick={() => setTypeFilter('new')}
+              >
+                New <span className="george-faq-filter-count">{typeCounts.new}</span>
+              </button>
+              <button
+                type="button"
+                className={`george-faq-filter-btn is-modified ${typeFilter === 'modified' ? 'is-active' : ''}`}
+                onClick={() => setTypeFilter('modified')}
+              >
+                Modified <span className="george-faq-filter-count">{typeCounts.modified}</span>
+              </button>
+            </div>
+
             <button
               type="button"
-              className={`george-faq-filter-btn ${typeFilter === 'all' ? 'is-active' : ''}`}
-              onClick={() => setTypeFilter('all')}
+              className={`george-faq-advanced-toggle ${showAdvancedFilters ? 'is-active' : ''}`}
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
             >
-              All <span className="george-faq-filter-count">{typeCounts.all}</span>
-            </button>
-            <button
-              type="button"
-              className={`george-faq-filter-btn is-new ${typeFilter === 'new' ? 'is-active' : ''}`}
-              onClick={() => setTypeFilter('new')}
-            >
-              New <span className="george-faq-filter-count">{typeCounts.new}</span>
-            </button>
-            <button
-              type="button"
-              className={`george-faq-filter-btn is-modified ${typeFilter === 'modified' ? 'is-active' : ''}`}
-              onClick={() => setTypeFilter('modified')}
-            >
-              Modified <span className="george-faq-filter-count">{typeCounts.modified}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+              </svg>
+              <span>Filters</span>
+              {(categoryFilter || subCategoryFilter || softwareFilter || osFilter || interventionTypeFilter) && (
+                <span className="george-faq-filter-badge">
+                  {[categoryFilter, subCategoryFilter, softwareFilter, softwareVersionFilter, osFilter, osVersionFilter, interventionTypeFilter].filter(Boolean).length}
+                </span>
+              )}
+              <svg
+                className={`george-faq-advanced-chevron ${showAdvancedFilters ? 'is-open' : ''}`}
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+              >
+                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </button>
           </div>
 
-          <button
-            type="button"
-            className={`george-faq-metadata-toggle ${showAllMetadata ? 'is-active' : ''}`}
-            onClick={() => setShowAllMetadata(!showAllMetadata)}
-            title={showAllMetadata ? 'Hide all metadata' : 'Show all metadata'}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <rect x="1" y="3" width="14" height="2" rx="1" fill="currentColor"/>
-              <rect x="1" y="7" width="10" height="2" rx="1" fill="currentColor"/>
-              <rect x="1" y="11" width="6" height="2" rx="1" fill="currentColor"/>
-            </svg>
-            <span>Show All</span>
-            <span className={`george-faq-toggle-indicator ${showAllMetadata ? 'is-on' : ''}`} />
-          </button>
+          {/* Advanced Filters Panel */}
+          {showAdvancedFilters && (
+            <div className="george-faq-advanced-filters">
+              <div className="george-faq-filter-row">
+                {/* Category Filter */}
+                <div className="george-faq-filter-item">
+                  <label className="george-faq-filter-label">Category</label>
+                  <select
+                    className="george-faq-filter-select"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                  >
+                    <option value="">All Categories</option>
+                    {filterOptions.categories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sub-category Filter */}
+                <div className="george-faq-filter-item">
+                  <label className="george-faq-filter-label">Sub-category</label>
+                  <select
+                    className="george-faq-filter-select"
+                    value={subCategoryFilter}
+                    onChange={(e) => setSubCategoryFilter(e.target.value)}
+                    disabled={!categoryFilter}
+                  >
+                    <option value="">{categoryFilter ? 'All Sub-categories' : 'Select category first'}</option>
+                    {categoryFilter && filterOptions.subCategories.get(categoryFilter)?.map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Intervention Type Filter */}
+                <div className="george-faq-filter-item">
+                  <label className="george-faq-filter-label">Intervention Type</label>
+                  <select
+                    className="george-faq-filter-select"
+                    value={interventionTypeFilter}
+                    onChange={(e) => setInterventionTypeFilter(e.target.value)}
+                  >
+                    <option value="">All Types</option>
+                    {filterOptions.interventionTypes.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="george-faq-filter-row">
+                {/* Software Filter */}
+                <div className="george-faq-filter-item">
+                  <label className="george-faq-filter-label">Software</label>
+                  <select
+                    className="george-faq-filter-select"
+                    value={softwareFilter}
+                    onChange={(e) => setSoftwareFilter(e.target.value)}
+                  >
+                    <option value="">All Software</option>
+                    {[...filterOptions.software.keys()].map((sw) => (
+                      <option key={sw} value={sw}>{sw}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Software Version Filter */}
+                <div className="george-faq-filter-item">
+                  <label className="george-faq-filter-label">Software Version</label>
+                  <select
+                    className="george-faq-filter-select"
+                    value={softwareVersionFilter}
+                    onChange={(e) => setSoftwareVersionFilter(e.target.value)}
+                    disabled={!softwareFilter}
+                  >
+                    <option value="">{softwareFilter ? 'All Versions' : 'Select software first'}</option>
+                    {softwareFilter && filterOptions.software.get(softwareFilter)?.map((ver) => (
+                      <option key={ver} value={ver}>v{ver}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* OS Filter */}
+                <div className="george-faq-filter-item">
+                  <label className="george-faq-filter-label">Operating System</label>
+                  <select
+                    className="george-faq-filter-select"
+                    value={osFilter}
+                    onChange={(e) => setOsFilter(e.target.value)}
+                  >
+                    <option value="">All OS</option>
+                    {[...filterOptions.os.keys()].map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* OS Version Filter */}
+                <div className="george-faq-filter-item">
+                  <label className="george-faq-filter-label">OS Version</label>
+                  <select
+                    className="george-faq-filter-select"
+                    value={osVersionFilter}
+                    onChange={(e) => setOsVersionFilter(e.target.value)}
+                    disabled={!osFilter}
+                  >
+                    <option value="">{osFilter ? 'All Versions' : 'Select OS first'}</option>
+                    {osFilter && filterOptions.os.get(osFilter)?.map((ver) => (
+                      <option key={ver} value={ver}>{ver}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Clear Filters Button */}
+              {(categoryFilter || subCategoryFilter || softwareFilter || softwareVersionFilter || osFilter || osVersionFilter || interventionTypeFilter) && (
+                <div className="george-faq-filter-actions">
+                  <button
+                    type="button"
+                    className="george-faq-clear-filters-btn"
+                    onClick={() => {
+                      setCategoryFilter('');
+                      setSubCategoryFilter('');
+                      setSoftwareFilter('');
+                      setSoftwareVersionFilter('');
+                      setOsFilter('');
+                      setOsVersionFilter('');
+                      setInterventionTypeFilter('');
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                    Clear All Filters
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Visual Process Diagram - Apple-inspired full-width section */}
@@ -931,23 +1315,16 @@ export default function FaqPage() {
                   </button>
 
                   <div className="george-faq-card-meta">
-                    {/* Category and Sub-category - always visible */}
-                    <div className="george-faq-category-row">
-                      {content.category && (
-                        <span className="george-faq-category-badge">{content.category}</span>
-                      )}
-                      {content.sub_category && (
-                        <span className="george-faq-subcategory-badge">{content.sub_category}</span>
-                      )}
-                    </div>
-
-                    <div className="george-faq-meta-row">
-                      {/* Product pills - shown when metadata is visible */}
-                      {isMetadataVisible(key) && (
-                        <div className="george-faq-pills">
-                          <ProductBadges combinations={item.applicable_combinations} />
-                        </div>
-                      )}
+                    <div className="george-faq-meta-top">
+                      {/* Category and Sub-category - always visible */}
+                      <div className="george-faq-category-row">
+                        {content.category && (
+                          <span className="george-faq-category-badge">{content.category}</span>
+                        )}
+                        {content.sub_category && (
+                          <span className="george-faq-subcategory-badge">{content.sub_category}</span>
+                        )}
+                      </div>
 
                       {/* Source counts and date */}
                       <div className="george-faq-info">
@@ -965,6 +1342,40 @@ export default function FaqPage() {
                           {new Date(item.created_at).toLocaleDateString()}
                         </span>
                       </div>
+                    </div>
+
+                    {/* Metadata toggle with inline pills */}
+                    <div className="george-faq-metadata-inline">
+                      <button
+                        type="button"
+                        className={`george-faq-inline-metadata-btn ${isMetadataVisible(key) ? 'is-active' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleMetadata(key);
+                        }}
+                        title={isMetadataVisible(key) ? 'Hide software/OS metadata' : 'Show software/OS metadata'}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <rect x="2" y="4" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+                          <rect x="2" y="7.25" width="8" height="1.5" rx="0.75" fill="currentColor"/>
+                          <rect x="2" y="10.5" width="5" height="1.5" rx="0.75" fill="currentColor"/>
+                        </svg>
+                        <span>{isMetadataVisible(key) ? 'Hide' : 'Show'} Metadata</span>
+                        <svg 
+                          className={`george-faq-metadata-chevron ${isMetadataVisible(key) ? 'is-open' : ''}`} 
+                          width="12" 
+                          height="12" 
+                          viewBox="0 0 12 12" 
+                          fill="none"
+                        >
+                          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                      {isMetadataVisible(key) && (
+                        <div className="george-faq-pills-inline">
+                          <ProductBadges combinations={item.applicable_combinations} />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1002,24 +1413,8 @@ export default function FaqPage() {
                         </div>
                       )}
 
-                      {/* Card footer with metadata toggle (left) and edit button (right) */}
+                      {/* Card footer with edit button */}
                       <div className="george-faq-card-footer">
-                        <button
-                          type="button"
-                          className={`george-faq-card-metadata-toggle ${isMetadataVisible(key) ? 'is-active' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleMetadata(key);
-                          }}
-                          title={isMetadataVisible(key) ? 'Hide software/OS metadata' : 'Show software/OS metadata'}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                            <rect x="2" y="4" width="12" height="1.5" rx="0.75" fill="currentColor"/>
-                            <rect x="2" y="7.25" width="8" height="1.5" rx="0.75" fill="currentColor"/>
-                            <rect x="2" y="10.5" width="5" height="1.5" rx="0.75" fill="currentColor"/>
-                          </svg>
-                          <span>{isMetadataVisible(key) ? 'Hide' : 'Show'} Metadata</span>
-                        </button>
                         <button
                           type="button"
                           className="george-faq-edit-btn"
