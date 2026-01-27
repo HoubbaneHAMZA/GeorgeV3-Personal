@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { useDocsSnapshots } from '@/hooks/useDocsSnapshots';
 
 const dataSources = [
   {
@@ -73,12 +75,11 @@ const filters = [
 ];
 
 export default function DocsPage() {
-  const [sourcesSnapshot, setSourcesSnapshot] = useState<Record<string, {
-    lastUpdated: string | null;
-    updatedFiles: Array<{ docId: string; docUpdatedAt: string | null }>;
-  }> | null>(null);
+  const { snapshots: sourcesSnapshot, refresh } = useDocsSnapshots();
   const [openUpdatedFor, setOpenUpdatedFor] = useState<string | null>(null);
   const [updatedModalClosing, setUpdatedModalClosing] = useState(false);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+
   const titleizeDocId = (value: string) => {
     if (!value) return 'Unknown doc';
     const stripped = value.replace(/\.[a-z0-9]+$/i, '');
@@ -90,44 +91,11 @@ export default function DocsPage() {
       .join(' ');
   };
 
-  useEffect(() => {
-    let mounted = true;
-    fetch('/api/docs/snapshots', { cache: 'no-store' })
-      .then(async (response) => {
-        if (!response.ok) {
-          const error = await response.json().catch(() => null);
-          throw new Error(error?.error || 'Failed to load snapshots.');
-        }
-        return response.json();
-      })
-      .then((payload) => {
-        if (!mounted) return;
-        const snapshots = Array.isArray(payload?.snapshots) ? payload.snapshots : [];
-        const next: Record<string, { lastUpdated: string | null; updatedFiles: Array<{ docId: string; docUpdatedAt: string | null }> }> = {};
-        snapshots.forEach((row: { vectorstore_key?: unknown; last_updated?: unknown; updated_files?: unknown }) => {
-          const key = String(row?.vectorstore_key || '').toLowerCase();
-          if (!key) return;
-          const updatedFiles = Array.isArray(row?.updated_files)
-            ? row.updated_files.map((item: { doc_id?: unknown; file_name?: unknown; doc_updated_at?: unknown }) => ({
-                docId: String(item?.doc_id || item?.file_name || ''),
-                docUpdatedAt: item?.doc_updated_at ? String(item.doc_updated_at) : null
-              }))
-            : [];
-          next[key] = {
-            lastUpdated: row?.last_updated ? String(row.last_updated) : null,
-            updatedFiles
-          };
-        });
-        setSourcesSnapshot(next);
-      })
-      .catch((error: Error) => {
-        if (!mounted) return;
-        console.warn('[docs] failed to load vectorstore snapshots', error.message);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const handleRefresh = async () => {
+    setIsManualRefreshing(true);
+    await refresh();
+    setIsManualRefreshing(false);
+  };
 
   return (
     <div className="george-app">
@@ -200,7 +168,18 @@ export default function DocsPage() {
         </section>
 
         <section className="george-docs-section">
-          <h3>Data Sources</h3>
+          <div className="george-docs-section-header">
+            <h3>Data Sources</h3>
+            <button
+              type="button"
+              className={`george-docs-refresh-btn${isManualRefreshing ? ' is-refreshing' : ''}`}
+              onClick={handleRefresh}
+              disabled={isManualRefreshing}
+              title="Refresh data"
+            >
+              <RefreshCw size={16} className={isManualRefreshing ? 'spin' : ''} />
+            </button>
+          </div>
           <div className="george-docs-list">
             {dataSources.map((source) => (
               <div key={source.name} className="george-docs-row">

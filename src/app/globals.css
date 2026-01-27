@@ -21,6 +21,7 @@ html, body {
   min-height: 0;
   font-family: 'Geist Mono', 'Geist Mono Fallback', monospace;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .george-app {
@@ -31,17 +32,36 @@ html, body {
   overflow: visible;
 }
 
+/* Page transitions using View Transitions API */
 .george-page {
-  animation: georgePageFade 0.25s ease;
+  view-transition-name: page-content;
 }
 
-@keyframes georgePageFade {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+::view-transition-old(page-content) {
+  animation: pageOut 0.15s ease-out forwards;
+}
+
+::view-transition-new(page-content) {
+  animation: pageIn 0.15s ease-out forwards;
+}
+
+@keyframes pageOut {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .george-page {
+  ::view-transition-old(page-content),
+  ::view-transition-new(page-content) {
     animation: none;
   }
 }
@@ -59,8 +79,10 @@ html, body {
   position: relative;
   z-index: 1000;
   background: var(--page-bg);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease, padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Keep header aligned across all pages */
 
 .george-header-hidden .george-header {
   opacity: 0;
@@ -288,11 +310,56 @@ html, body {
   line-height: 1.6;
 }
 
+.george-docs-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.george-docs-section-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 32px;
+}
+
+.george-docs-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.george-docs-refresh-btn:hover:not(:disabled) {
+  border-color: var(--muted);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.george-docs-refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.george-docs-refresh-btn.is-refreshing {
+  border-color: var(--accent);
+}
+
+.george-docs-refresh-btn .spin {
+  animation: spin 1s linear infinite;
+}
+
 .george-docs-section {
   margin-bottom: 56px;
 }
 
-.george-docs-section h3 {
+.george-docs-section > h3 {
   margin: 0 0 20px;
   font-size: 1.25rem;
 }
@@ -5539,6 +5606,55 @@ html, body {
   color: var(--accent);
 }
 
+/* Refresh Button */
+.george-analytics-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.george-analytics-refresh-btn:hover:not(:disabled) {
+  border-color: var(--muted);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.george-analytics-refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.george-analytics-refresh-btn.is-refreshing {
+  border-color: var(--accent);
+}
+
+.george-analytics-refresh-btn .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Refreshing Banner */
+.george-analytics-refreshing-banner {
+  background: rgba(207, 92, 42, 0.08);
+  color: var(--accent);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
 /* Analytics Cards */
 .george-analytics-overview {
   margin-bottom: 32px;
@@ -6359,13 +6475,15 @@ html, body {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 81px);
-  position: sticky;
+  position: fixed;
+  left: 0;
   top: 81px;
   background: var(--page-bg);
   border-right: 1px solid var(--border);
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   width: 260px;
   overflow: hidden;
+  z-index: 100;
 }
 
 .conversation-sidebar.is-collapsed {
@@ -6708,27 +6826,17 @@ html, body {
 .george-main-content {
   flex: 1;
   min-width: 0;
+  margin-left: 56px; /* collapsed sidebar width */
+}
+
+/* Add shadow when sidebar is expanded (overlaying content) */
+.conversation-sidebar:not(.is-collapsed) {
+  box-shadow: var(--shadow);
 }
 
 @media (max-width: 900px) {
-  .conversation-sidebar {
-    position: fixed;
-    left: 0;
-    top: 81px;
-    z-index: 100;
-    box-shadow: var(--shadow);
-  }
-
-  .conversation-sidebar.is-collapsed {
-    box-shadow: none;
-  }
-
   .george-main-with-sidebar {
     flex-direction: column;
-  }
-
-  .george-main-content {
-    margin-left: 56px;
   }
 }
 

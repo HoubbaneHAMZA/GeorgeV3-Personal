@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import TransitionLink from '@/components/TransitionLink';
 import { supabase } from '@/lib/supabase/client';
 
 export default function AppHeader() {
@@ -71,12 +72,11 @@ export default function AppHeader() {
         </div>
       </div>
       <nav className="george-nav">
-        <a href="/" className={`george-nav-link${pathname === '/' ? ' is-active' : ''}`}>Ask George</a>
-        <a href="/guide" className={`george-nav-link${pathname === '/guide' ? ' is-active' : ''}`}>How to Use</a>
-        <a href="/docs" className={`george-nav-link${pathname === '/docs' ? ' is-active' : ''}`}>Documentation</a>
-        <a href="/faq" className={`george-nav-link${pathname === '/faq' ? ' is-active' : ''}`}>FAQ</a>
-        <a href="/updates" className={`george-nav-link${pathname === '/updates' ? ' is-active' : ''}`}>Updates</a>
-        <a href="/analytics" className={`george-nav-link${pathname === '/analytics' ? ' is-active' : ''}`}>Analytics</a>
+        <TransitionLink href="/" className={`george-nav-link${pathname === '/' ? ' is-active' : ''}`}>Ask George</TransitionLink>
+        <TransitionLink href="/guide" className={`george-nav-link${pathname === '/guide' ? ' is-active' : ''}`}>How to Use</TransitionLink>
+        <TransitionLink href="/docs" className={`george-nav-link${pathname === '/docs' ? ' is-active' : ''}`}>Documentation</TransitionLink>
+        <TransitionLink href="/faq" className={`george-nav-link${pathname === '/faq' ? ' is-active' : ''}`}>FAQ</TransitionLink>
+        <TransitionLink href="/analytics" className={`george-nav-link${pathname === '/analytics' ? ' is-active' : ''}`}>Analytics</TransitionLink>
         <div className="george-profile" ref={profileRef}>
           <button
             type="button"

@@ -50,11 +50,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <>
+    <div className="george-page-wrapper">
       {pathname !== '/login' ? <AppHeader /> : null}
-      <div key={pathname} className="george-page">
+      <div className="george-page">
         {children}
       </div>
-    </>
+    </div>
   );
 }

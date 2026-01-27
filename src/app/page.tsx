@@ -8,6 +8,9 @@ import { supabase } from '@/lib/supabase/client';
 import FeedbackButtons, { type FeedbackRating } from '@/components/FeedbackButtons';
 import ConversationList, { type Conversation } from '@/components/ConversationList';
 import ConversationFeedback from '@/components/ConversationFeedback';
+import { useConversationPrefetch, prefetchConversation, type CachedConversation } from '@/hooks/useConversationCache';
+import { useConversationsList } from '@/hooks/useConversationsList';
+import { mutate as swrMutate } from 'swr';
 
 function CollapsibleStep({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -393,8 +396,18 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [conversationsLoading, setConversationsLoading] = useState(true);
+
+  // Use SWR-cached conversations list
+  const {
+    conversations,
+    accessToken: cachedAccessToken,
+    isLoading: conversationsLoading,
+    refresh: refreshConversations,
+    updateConversationFeedback,
+    removeConversation: removeConversationFromList,
+    renameConversation: renameConversationInList
+  } = useConversationsList();
+
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [showConversationFeedbackHighlight, setShowConversationFeedbackHighlight] = useState(false);
   const [isConversationFeedbackOpen, setIsConversationFeedbackOpen] = useState(false);
@@ -405,6 +418,7 @@ export default function Home() {
     }
     return false;
   });
+  const conversationCacheRef = useRef<Map<string, CachedConversation>>(new Map());
   const [error, setError] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -457,6 +471,16 @@ export default function Home() {
     () => conversations.find((c) => c.id === conversationId) ?? null,
     [conversations, conversationId]
   );
+
+  // Callback to store prefetched data in our local cache
+  const handlePrefetchComplete = useCallback((convId: string, data: CachedConversation) => {
+    conversationCacheRef.current.set(convId, data);
+  }, []);
+
+  // Prefetch hook for conversation hover
+  const { handleMouseEnter: handlePrefetchEnter, handleMouseLeave: handlePrefetchLeave } =
+    useConversationPrefetch(cachedAccessToken, handlePrefetchComplete);
+
   // Count exchanges (pairs of user + assistant messages)
   const exchangeCount = useMemo(
     () => Math.floor(messages.filter((m) => m.role === 'assistant').length),
@@ -860,59 +884,27 @@ export default function Home() {
     setInitialStreamStarted(false);
   };
 
-  // Fetch conversations list with retry logic
-  const fetchConversations = useCallback(async (retries = 2) => {
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-      if (!accessToken) return;
-
-      const response = await fetch('/api/conversations', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const fetchedConversations = data.conversations || [];
-        setConversations(fetchedConversations);
-
-        // Check for orphaned localStorage data - if we have a sessionId that doesn't exist in the database
-        const storedSessionId = localStorage.getItem(sessionStorageKey);
-        if (storedSessionId && fetchedConversations.length >= 0) {
-          const sessionExists = fetchedConversations.some(
-            (conv: { session_id: string }) => conv.session_id === storedSessionId
-          );
-          if (!sessionExists) {
-            // Clear orphaned local data
-            console.log('[fetchConversations] Clearing orphaned localStorage data for session:', storedSessionId);
-            localStorage.removeItem(sessionStorageKey);
-            localStorage.removeItem(messagesStorageKey);
-            localStorage.removeItem(conversationIdStorageKey);
-            setSessionId(null);
-            setConversationId(null);
-            setMessages([]);
-          }
-        }
-      } else if (response.status >= 500 && retries > 0) {
-        // Retry on server errors (cold start, connection pool issues)
-        await new Promise((r) => setTimeout(r, 1000));
-        return fetchConversations(retries - 1);
-      }
-    } catch (err) {
-      console.error('Failed to fetch conversations:', err);
-      if (retries > 0) {
-        await new Promise((r) => setTimeout(r, 1000));
-        return fetchConversations(retries - 1);
-      }
-    } finally {
-      setConversationsLoading(false);
-    }
-  }, [sessionStorageKey, messagesStorageKey]);
-
-  // Load conversations on mount
+  // Check for orphaned localStorage data when conversations load
   useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+    if (conversationsLoading || conversations.length === 0) return;
+
+    const storedSessionId = localStorage.getItem(sessionStorageKey);
+    if (storedSessionId) {
+      const sessionExists = conversations.some(
+        (conv) => conv.session_id === storedSessionId
+      );
+      if (!sessionExists) {
+        // Clear orphaned local data
+        console.log('[useEffect] Clearing orphaned localStorage data for session:', storedSessionId);
+        localStorage.removeItem(sessionStorageKey);
+        localStorage.removeItem(messagesStorageKey);
+        localStorage.removeItem(conversationIdStorageKey);
+        setSessionId(null);
+        setConversationId(null);
+        setMessages([]);
+      }
+    }
+  }, [conversations, conversationsLoading, sessionStorageKey, messagesStorageKey, conversationIdStorageKey]);
 
   // Persist sidebar collapsed state to localStorage
   useEffect(() => {
@@ -968,23 +960,61 @@ export default function Home() {
 
     if (response.ok) {
       // Update the local conversations list with the new feedback
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? { ...c, feedback_rating: rating, feedback_comment: comment || null }
-            : c
-        )
-      );
+      if (rating) {
+        updateConversationFeedback(conversationId, rating, comment);
+      }
       setShowConversationFeedbackHighlight(false);
     }
-  }, [conversationId]);
+  }, [conversationId, updateConversationFeedback]);
 
-  // Handle selecting a conversation from the list (with retry logic)
+  // Helper to convert API messages to ChatMessage format
+  const convertApiMessages = useCallback((apiMessages: CachedConversation['messages'], sessionId: string): ChatMessage[] => {
+    const loadedMessages: ChatMessage[] = [];
+    for (const msg of apiMessages || []) {
+      // Add user message
+      loadedMessages.push({
+        role: 'user',
+        content: msg.user_input
+      });
+      // Add assistant response
+      loadedMessages.push({
+        role: 'assistant',
+        content: msg.response_content,
+        sources: msg.response_sources,
+        trace: msg.trace_data as AgentTraceData | undefined,
+        timing: msg.timing_server_ms ? { server_ms: msg.timing_server_ms, round_trip_ms: 0 } : undefined,
+        interactionId: msg.id,
+        feedbackRating: msg.feedback_rating ? (msg.feedback_rating as FeedbackRating) : undefined,
+        feedbackReady: true,
+        originalSessionId: sessionId,
+        originalUserInput: msg.user_input
+      });
+    }
+    return loadedMessages;
+  }, []);
+
+  // Handle selecting a conversation from the list (with caching + optimistic UI)
   const handleSelectConversation = useCallback(async (conversation: Conversation, retries = 2) => {
     // Skip if already on this conversation
     if (conversationId === conversation.id) return;
 
-    // Start transition animation
+    // Check SWR cache first for instant loading
+    const cacheKey = `/api/conversations/${conversation.id}`;
+    const cachedData = conversationCacheRef.current.get(conversation.id);
+
+    // OPTIMISTIC UI: If we have cached data, show it immediately
+    if (cachedData) {
+      // Instant switch - no loading state needed
+      const loadedMessages = convertApiMessages(cachedData.messages, conversation.session_id);
+      setSessionId(cachedData.conversation?.session_id || conversation.session_id);
+      setConversationId(conversation.id);
+      setMessages(loadedMessages);
+      setHasResponse(loadedMessages.length > 0);
+      setStatusDone(true);
+      return;
+    }
+
+    // No cache - need to fetch (show loading state)
     setIsLoadingConversation(true);
 
     try {
@@ -995,54 +1025,43 @@ export default function Home() {
         return;
       }
 
-      const response = await fetch(`/api/conversations/${conversation.id}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      // Check SWR global cache
+      const swrCacheKey = [cacheKey, accessToken];
+      let data: CachedConversation | undefined;
 
-      if (response.ok) {
-        const data = await response.json();
+      // Try to get from SWR cache via a quick fetch that may hit cache
+      try {
+        const response = await fetch(cacheKey, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
 
-        // Clear messages first for smooth transition
-        setMessages([]);
+        if (response.ok) {
+          const fetchedData: CachedConversation = await response.json();
+          data = fetchedData;
 
-        // Small delay for fade-out effect
-        await new Promise((r) => setTimeout(r, 150));
+          // Store in our local cache for next time
+          conversationCacheRef.current.set(conversation.id, fetchedData);
+
+          // Also update SWR cache
+          swrMutate(swrCacheKey, fetchedData, { revalidate: false });
+        }
+      } catch {
+        // Fall through to retry logic
+      }
+
+      if (data) {
+        // Convert messages and update state in one go to avoid flash
+        const loadedMessages = convertApiMessages(data.messages, conversation.session_id);
 
         // Use session_id from API response (more reliable than the passed conversation object)
         setSessionId(data.conversation?.session_id || conversation.session_id);
         setConversationId(conversation.id);
-
-        // Convert messages from API format to ChatMessage format
-        const loadedMessages: ChatMessage[] = [];
-        for (const msg of data.messages || []) {
-          // Add user message
-          loadedMessages.push({
-            role: 'user',
-            content: msg.user_input
-          });
-          // Add assistant response
-          loadedMessages.push({
-            role: 'assistant',
-            content: msg.response_content,
-            sources: msg.response_sources,
-            trace: msg.trace_data,
-            timing: msg.timing_server_ms ? { server_ms: msg.timing_server_ms, round_trip_ms: 0 } : undefined,
-            interactionId: msg.id,
-            feedbackRating: msg.feedback_rating ? (msg.feedback_rating as FeedbackRating) : undefined,
-            feedbackReady: true,
-            originalSessionId: conversation.session_id,
-            originalUserInput: msg.user_input
-          });
-        }
-
         setMessages(loadedMessages);
         setHasResponse(loadedMessages.length > 0);
         setStatusDone(true);
-
-        // End transition animation after messages load
-        setTimeout(() => setIsLoadingConversation(false), 50);
-      } else if (response.status >= 500 && retries > 0) {
-        // Retry on server errors
+        setIsLoadingConversation(false);
+      } else if (retries > 0) {
+        // Retry on failure
         await new Promise((r) => setTimeout(r, 1000));
         return handleSelectConversation(conversation, retries - 1);
       } else {
@@ -1056,7 +1075,7 @@ export default function Home() {
       }
       setIsLoadingConversation(false);
     }
-  }, [conversationId]);
+  }, [conversationId, convertApiMessages]);
 
   // Handle selecting a conversation by ID (for search results)
   const handleSelectConversationById = useCallback((id: string) => {
@@ -1096,7 +1115,7 @@ export default function Home() {
       });
 
       if (response.ok) {
-        setConversations((prev) => prev.filter((c) => c.id !== id));
+        removeConversationFromList(id);
         // If we deleted the current conversation, reset
         if (conversationId === id) {
           resetConversation();
@@ -1105,7 +1124,7 @@ export default function Home() {
     } catch (err) {
       console.error('Failed to delete conversation:', err);
     }
-  }, [conversationId, resetConversation]);
+  }, [conversationId, resetConversation, removeConversationFromList]);
 
   // Handle renaming a conversation
   const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
@@ -1124,14 +1143,12 @@ export default function Home() {
       });
 
       if (response.ok) {
-        setConversations((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c))
-        );
+        renameConversationInList(id, newTitle);
       }
     } catch (err) {
       console.error('Failed to rename conversation:', err);
     }
-  }, []);
+  }, [renameConversationInList]);
 
   useEffect(() => {
     try {
@@ -2415,7 +2432,7 @@ export default function Home() {
           if (typeof data?.conversationId === 'string' && data.conversationId.trim()) {
             setConversationId(data.conversationId);
             // Refresh conversations list to show the new conversation
-            fetchConversations();
+            refreshConversations();
           }
           if (usageRecords.length > 0) {
             const totalCostUsd = usageRecords.reduce((sum, record) => {
@@ -2722,6 +2739,8 @@ export default function Home() {
           isLoading={conversationsLoading}
           isCollapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onPrefetchConversation={handlePrefetchEnter}
+          onCancelPrefetch={handlePrefetchLeave}
         />
         <div className="george-main-content">
       {/* Main Content */}
