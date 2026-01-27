@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import FeedbackButtons, { type FeedbackRating } from '@/components/FeedbackButtons';
+import ConversationList, { type Conversation } from '@/components/ConversationList';
 
 function CollapsibleStep({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -389,8 +390,19 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationsLoading, setConversationsLoading] = useState(true);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sidebarCollapsed') === 'true';
+    }
+    return false;
+  });
   const [error, setError] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const infoRef = useRef<HTMLDivElement | null>(null);
   const traceBufferRef = useRef<AgentTraceData>({});
   const [steps, setSteps] = useState<{
@@ -538,6 +550,20 @@ export default function Home() {
   const showGeneratedBy = statusDone;
   const showInitialLoader = steps.started && !statusDone && !sessionId && !initialStreamStarted;
   const showTranscript = messages.length > 0 && (statusDone || sessionId || initialStreamStarted);
+
+  // Fetch current user name for greeting
+  useEffect(() => {
+    const fetchUserName = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const user = sessionData?.session?.user;
+      // Try to get full_name from user metadata, fallback to email prefix
+      const fullName = user?.user_metadata?.full_name;
+      const emailPrefix = user?.email?.split('@')[0];
+      setCurrentUserName(fullName || emailPrefix || null);
+    };
+    fetchUserName();
+  }, []);
+
   useEffect(() => {
     if (!isTicketMode) return;
     if (attachments.length > 0) {
@@ -801,6 +827,7 @@ export default function Home() {
     setLoading(false);
     setMessages([]);
     setSessionId(null);
+    setConversationId(null);
     traceBufferRef.current = {};
     try {
       localStorage.removeItem(sessionStorageKey);
@@ -817,6 +844,196 @@ export default function Home() {
     setIsChatOverlayVisible(false);
     setInitialStreamStarted(false);
   };
+
+  // Fetch conversations list with retry logic
+  const fetchConversations = useCallback(async (retries = 2) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) return;
+
+      const response = await fetch('/api/conversations', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setConversations(data.conversations || []);
+      } else if (response.status >= 500 && retries > 0) {
+        // Retry on server errors (cold start, connection pool issues)
+        await new Promise((r) => setTimeout(r, 1000));
+        return fetchConversations(retries - 1);
+      }
+    } catch (err) {
+      console.error('Failed to fetch conversations:', err);
+      if (retries > 0) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return fetchConversations(retries - 1);
+      }
+    } finally {
+      setConversationsLoading(false);
+    }
+  }, []);
+
+  // Load conversations on mount
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  // Persist sidebar collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  // Handle selecting a conversation from the list (with retry logic)
+  const handleSelectConversation = useCallback(async (conversation: Conversation, retries = 2) => {
+    // Skip if already on this conversation
+    if (conversationId === conversation.id) return;
+
+    // Start transition animation
+    setIsLoadingConversation(true);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) {
+        setIsLoadingConversation(false);
+        return;
+      }
+
+      const response = await fetch(`/api/conversations/${conversation.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Clear messages first for smooth transition
+        setMessages([]);
+
+        // Small delay for fade-out effect
+        await new Promise((r) => setTimeout(r, 150));
+
+        // Use session_id from API response (more reliable than the passed conversation object)
+        setSessionId(data.conversation?.session_id || conversation.session_id);
+        setConversationId(conversation.id);
+
+        // Convert messages from API format to ChatMessage format
+        const loadedMessages: ChatMessage[] = [];
+        for (const msg of data.messages || []) {
+          // Add user message
+          loadedMessages.push({
+            role: 'user',
+            content: msg.user_input
+          });
+          // Add assistant response
+          loadedMessages.push({
+            role: 'assistant',
+            content: msg.response_content,
+            sources: msg.response_sources,
+            trace: msg.trace_data,
+            timing: msg.timing_server_ms ? { server_ms: msg.timing_server_ms, round_trip_ms: 0 } : undefined,
+            interactionId: msg.id,
+            feedbackRating: msg.feedback_rating ? (msg.feedback_rating as FeedbackRating) : undefined,
+            feedbackReady: true,
+            originalSessionId: conversation.session_id,
+            originalUserInput: msg.user_input
+          });
+        }
+
+        setMessages(loadedMessages);
+        setHasResponse(loadedMessages.length > 0);
+        setStatusDone(true);
+
+        // End transition animation after messages load
+        setTimeout(() => setIsLoadingConversation(false), 50);
+      } else if (response.status >= 500 && retries > 0) {
+        // Retry on server errors
+        await new Promise((r) => setTimeout(r, 1000));
+        return handleSelectConversation(conversation, retries - 1);
+      } else {
+        setIsLoadingConversation(false);
+      }
+    } catch (err) {
+      console.error('Failed to load conversation:', err);
+      if (retries > 0) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return handleSelectConversation(conversation, retries - 1);
+      }
+      setIsLoadingConversation(false);
+    }
+  }, [conversationId]);
+
+  // Handle selecting a conversation by ID (for search results)
+  const handleSelectConversationById = useCallback((id: string) => {
+    // Try to find the conversation in our list
+    const conversation = conversations.find((c) => c.id === id);
+    if (conversation) {
+      handleSelectConversation(conversation);
+    } else {
+      // If not found in list, create a minimal conversation object
+      // The handler will fetch the full details
+      handleSelectConversation({
+        id,
+        session_id: '',
+        title: null,
+        created_at: '',
+        updated_at: '',
+        is_archived: false,
+        message_count: 0
+      });
+    }
+  }, [conversations, handleSelectConversation]);
+
+  // Handle deleting a conversation
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) return;
+
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.ok) {
+        setConversations((prev) => prev.filter((c) => c.id !== id));
+        // If we deleted the current conversation, reset
+        if (conversationId === id) {
+          resetConversation();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+    }
+  }, [conversationId, resetConversation]);
+
+  // Handle renaming a conversation
+  const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) return;
+
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title: newTitle })
+      });
+
+      if (response.ok) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to rename conversation:', err);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -1417,14 +1634,13 @@ export default function Home() {
     if (isChatRequest) {
       setSteps((prev) => ({ started: true, queryAnalysis: prev.queryAnalysis }));
       setIsChatOverlayVisible(true);
+      // Reset only UI state (collapse trace/sources panels) but preserve historical data
       setMessages((prev) =>
         prev.map((message) =>
           message.role === 'assistant'
             ? {
                 ...message,
-                sources: undefined,
-                trace: undefined,
-                timing: undefined,
+                // Keep sources, trace, timing - these are historical data
                 isTraceOpen: false,
                 isSourcesOpen: false,
                 collapsedTools: undefined
@@ -1701,6 +1917,7 @@ export default function Home() {
           isZendeskTicket: detectedIsZendeskTicket,
           agentInput: agentInputPayload ?? undefined,
           sessionId: sessionId || undefined,
+          conversationId: conversationId || undefined,
           attachments: isChatRequest
             ? attachments.map((attachment) => attachment.dataUrl)
             : undefined
@@ -2047,6 +2264,11 @@ export default function Home() {
           if (typeof data?.sessionId === 'string' && data.sessionId.trim()) {
             setSessionId(data.sessionId);
           }
+          if (typeof data?.conversationId === 'string' && data.conversationId.trim()) {
+            setConversationId(data.conversationId);
+            // Refresh conversations list to show the new conversation
+            fetchConversations();
+          }
           if (usageRecords.length > 0) {
             const totalCostUsd = usageRecords.reduce((sum, record) => {
               const value = typeof record.costUsd === 'number' ? record.costUsd : 0;
@@ -2148,6 +2370,7 @@ export default function Home() {
               const value = typeof record.costUsd === 'number' ? record.costUsd : 0;
               return sum + value;
             }, 0);
+            const finalConversationId = typeof data?.conversationId === 'string' ? data.conversationId : conversationId;
             const interactionPayload = {
               session_id: finalSessionId,
               user_input: cleanInput,
@@ -2159,7 +2382,8 @@ export default function Home() {
               timing_server_ms: serverMs,
               timing_roundtrip_ms: finalRoundTripMs,
               cost_usd: totalCostUsd > 0 ? totalCostUsd : undefined,
-              attachments_count: attachments.length
+              attachments_count: attachments.length,
+              conversation_id: finalConversationId || undefined
             };
             void fetch(agentInteractionsEndpoint, {
               method: 'POST',
@@ -2336,6 +2560,20 @@ export default function Home() {
 
   return (
     <div className="george-app">
+      <div className="george-main-with-sidebar">
+        <ConversationList
+          conversations={conversations}
+          activeConversationId={conversationId}
+          onSelectConversation={handleSelectConversation}
+          onSelectConversationById={handleSelectConversationById}
+          onNewChat={resetConversation}
+          onDeleteConversation={handleDeleteConversation}
+          onRenameConversation={handleRenameConversation}
+          isLoading={conversationsLoading}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+        <div className="george-main-content">
       {/* Main Content */}
       {!hasResponse ? (
         <main className={`george-main${isReturningHome ? ' is-returning' : ''}`}>
@@ -2345,6 +2583,9 @@ export default function Home() {
                 <img src="/george-logo.png" alt="George Character" className="george-character" />
               </div>
               <div className="george-greeting">
+                {currentUserName && (
+                  <p className="george-greeting-name">Hey {currentUserName}</p>
+                )}
                 <h2 className="george-greeting-title">How may I assist you today?</h2>
                 <p className="george-greeting-text">
                   I'm George, your DxO support assistant. I speak fluent PhotoLab, PureRAW, and all matters of image excellence.
@@ -3063,7 +3304,7 @@ export default function Home() {
         ) : null}
         <section className="george-output">
           <div className={`george-chat${showTranscript ? ' is-visible' : ''}`}>
-              <div className="george-chat-transcript" ref={chatTranscriptRef}>
+              <div className={`george-chat-transcript${isLoadingConversation ? ' is-transitioning' : ''}`} ref={chatTranscriptRef}>
                 {messages.map((message, index) => {
                   const trace = message.trace;
                   const traceQueries = trace?.agentThinking?.queries ?? [];
@@ -3081,6 +3322,7 @@ export default function Home() {
                     <div
                       key={`${message.role}-${index}`}
                       className={`george-chat-message ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}
+                      style={{ animationDelay: `${Math.min(index * 0.03, 0.3)}s` }}
                     >
                       <div className="george-chat-avatar" aria-hidden="true">
                         {message.role === 'assistant' ? (
@@ -3326,13 +3568,6 @@ export default function Home() {
                 </div>
               ) : null}
             </div>
-            {showTranscript ? (
-              <div className="george-input-container">
-                <button type="button" className="george-new-chat" onClick={requestNewChat}>
-                  New chat
-                </button>
-              </div>
-            ) : null}
         </section>
     </main>
       )}
@@ -3666,6 +3901,8 @@ export default function Home() {
         document.body
       ) : null}
 
+        </div>
+      </div>
     </div>
   );
 }

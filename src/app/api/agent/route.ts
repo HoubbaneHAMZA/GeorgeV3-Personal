@@ -26,7 +26,9 @@ export async function POST(request: Request) {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`
+      Authorization: `Bearer ${anonKey}`,
+      'x-user-id': userData.user.id,
+      'x-user-email': userData.user.email || ''
     },
     body
   });
