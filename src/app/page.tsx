@@ -7,6 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import FeedbackButtons, { type FeedbackRating } from '@/components/FeedbackButtons';
 import ConversationList, { type Conversation } from '@/components/ConversationList';
+import ConversationFeedback from '@/components/ConversationFeedback';
 
 function CollapsibleStep({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -341,6 +342,7 @@ export default function Home() {
   const agentInteractionsEndpoint = '/api/agent-interactions';
   const sessionStorageKey = useMemo(() => `george:session:${pathname}`, [pathname]);
   const messagesStorageKey = useMemo(() => `george:messages:${pathname}`, [pathname]);
+  const conversationIdStorageKey = useMemo(() => `george:conversationId:${pathname}`, [pathname]);
   const [input, setInput] = useState('');
   const [ticketError, setTicketError] = useState('');
   const [userEmailDraft, setUserEmailDraft] = useState('');
@@ -358,18 +360,18 @@ export default function Home() {
   const dropdownAnimTimeout = useRef<number | null>(null);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const [agentInterrupted, setAgentInterrupted] = useState<string | null>(null);
-  const [showNewChatConfirm, setShowNewChatConfirm] = useState(false);
+  const [showFeedbackReminder, setShowFeedbackReminder] = useState(false);
+  const [isFeedbackReminderClosing, setIsFeedbackReminderClosing] = useState(false);
+  const feedbackReminderCloseTimeout = useRef<number | null>(null);
   const [isZendeskNotFoundClosing, setIsZendeskNotFoundClosing] = useState(false);
   const [isAgentInterruptedClosing, setIsAgentInterruptedClosing] = useState(false);
   const [isAbortConfirmClosing, setIsAbortConfirmClosing] = useState(false);
-  const [isNewChatConfirmClosing, setIsNewChatConfirmClosing] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortRequestedRef = useRef(false);
   const runModeRef = useRef<'initial' | 'chat' | null>(null);
   const zendeskCloseTimeout = useRef<number | null>(null);
   const agentInterruptedCloseTimeout = useRef<number | null>(null);
   const abortConfirmCloseTimeout = useRef<number | null>(null);
-  const newChatConfirmCloseTimeout = useRef<number | null>(null);
   const [dropdownRect, setDropdownRect] = useState<{ left: number; top: number; width: number } | null>(null);
   const [dropdownReady, setDropdownReady] = useState(false);
   const [dropdownWidth, setDropdownWidth] = useState<number | null>(null);
@@ -394,6 +396,9 @@ export default function Home() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [showConversationFeedbackHighlight, setShowConversationFeedbackHighlight] = useState(false);
+  const [isConversationFeedbackOpen, setIsConversationFeedbackOpen] = useState(false);
+  const conversationFeedbackHighlightTimeout = useRef<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sidebarCollapsed') === 'true';
@@ -448,6 +453,15 @@ export default function Home() {
         ? statusSteps.length - 1
         : Math.max(activeStatusIndex, 0);
   const isChatMode = messages.length > 0;
+  const currentConversation = useMemo(
+    () => conversations.find((c) => c.id === conversationId) ?? null,
+    [conversations, conversationId]
+  );
+  // Count exchanges (pairs of user + assistant messages)
+  const exchangeCount = useMemo(
+    () => Math.floor(messages.filter((m) => m.role === 'assistant').length),
+    [messages]
+  );
   // Extract ticket number if input starts with # followed by numbers only (initial mode only).
   const ticketMatch = !isChatMode ? input.match(/^(#\d+)(.*)$/) : null;
   const ticketTag = ticketMatch ? ticketMatch[1] : null;
@@ -832,6 +846,7 @@ export default function Home() {
     try {
       localStorage.removeItem(sessionStorageKey);
       localStorage.removeItem(messagesStorageKey);
+      localStorage.removeItem(conversationIdStorageKey);
     } catch {
       // Ignore storage failures (private mode, SSR).
     }
@@ -872,6 +887,7 @@ export default function Home() {
             console.log('[fetchConversations] Clearing orphaned localStorage data for session:', storedSessionId);
             localStorage.removeItem(sessionStorageKey);
             localStorage.removeItem(messagesStorageKey);
+            localStorage.removeItem(conversationIdStorageKey);
             setSessionId(null);
             setConversationId(null);
             setMessages([]);
@@ -902,6 +918,66 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  // Highlight conversation feedback after every 5 exchanges
+  // If no feedback yet: remind to submit. If feedback exists: remind to verify it's still accurate.
+  useEffect(() => {
+    if (exchangeCount > 0 && exchangeCount % 5 === 0) {
+      setShowConversationFeedbackHighlight(true);
+      if (conversationFeedbackHighlightTimeout.current) {
+        window.clearTimeout(conversationFeedbackHighlightTimeout.current);
+      }
+      conversationFeedbackHighlightTimeout.current = window.setTimeout(() => {
+        setShowConversationFeedbackHighlight(false);
+        conversationFeedbackHighlightTimeout.current = null;
+      }, 3000);
+    }
+  }, [exchangeCount]);
+
+  // Cleanup feedback highlight timeout
+  useEffect(() => {
+    return () => {
+      if (conversationFeedbackHighlightTimeout.current) {
+        window.clearTimeout(conversationFeedbackHighlightTimeout.current);
+      }
+    };
+  }, []);
+
+  // Submit conversation feedback
+  const handleConversationFeedbackSubmit = useCallback(async (
+    rating: 'solved' | 'partially_solved' | 'not_solved' | null,
+    comment: string
+  ) => {
+    if (!conversationId) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+    if (!accessToken) return;
+
+    const response = await fetch(`/api/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        feedback_rating: rating,
+        feedback_comment: comment || null
+      })
+    });
+
+    if (response.ok) {
+      // Update the local conversations list with the new feedback
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? { ...c, feedback_rating: rating, feedback_comment: comment || null }
+            : c
+        )
+      );
+      setShowConversationFeedbackHighlight(false);
+    }
+  }, [conversationId]);
 
   // Handle selecting a conversation from the list (with retry logic)
   const handleSelectConversation = useCallback(async (conversation: Conversation, retries = 2) => {
@@ -998,7 +1074,11 @@ export default function Home() {
         created_at: '',
         updated_at: '',
         is_archived: false,
-        message_count: 0
+        message_count: 0,
+        feedback_rating: null,
+        feedback_comment: null,
+        category: null,
+        sub_category: null
       });
     }
   }, [conversations, handleSelectConversation]);
@@ -1063,6 +1143,18 @@ export default function Home() {
       // Ignore storage failures.
     }
   }, [sessionStorageKey, sessionId]);
+
+  // Restore conversationId from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(conversationIdStorageKey);
+      if (stored && !conversationId) {
+        setConversationId(stored);
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [conversationIdStorageKey, conversationId]);
 
   useEffect(() => {
     try {
@@ -1167,6 +1259,19 @@ export default function Home() {
       // Ignore storage failures.
     }
   }, [sessionId, sessionStorageKey]);
+
+  // Persist conversationId to localStorage
+  useEffect(() => {
+    try {
+      if (!conversationId) {
+        localStorage.removeItem(conversationIdStorageKey);
+        return;
+      }
+      localStorage.setItem(conversationIdStorageKey, conversationId);
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [conversationId, conversationIdStorageKey]);
 
   useEffect(() => {
     try {
@@ -1364,6 +1469,7 @@ export default function Home() {
     try {
       localStorage.removeItem(messagesStorageKey);
       localStorage.removeItem(sessionStorageKey);
+      localStorage.removeItem(conversationIdStorageKey);
     } catch {
       // Ignore storage failures.
     }
@@ -1382,6 +1488,7 @@ export default function Home() {
     try {
       localStorage.removeItem(messagesStorageKey);
       localStorage.removeItem(sessionStorageKey);
+      localStorage.removeItem(conversationIdStorageKey);
     } catch {
       // Ignore storage failures.
     }
@@ -1461,35 +1568,58 @@ export default function Home() {
     }
   };
   const requestNewChat = () => {
-    setIsNewChatConfirmClosing(false);
-    setShowNewChatConfirm(true);
-  };
-  const cancelNewChat = () => {
-    if (!showNewChatConfirm || isNewChatConfirmClosing) return;
-    setIsNewChatConfirmClosing(true);
-    if (newChatConfirmCloseTimeout.current) {
-      window.clearTimeout(newChatConfirmCloseTimeout.current);
+    // Show feedback reminder popup if there's a conversation with messages
+    if (conversationId && messages.length > 0) {
+      setIsFeedbackReminderClosing(false);
+      setShowFeedbackReminder(true);
+      return;
     }
-    newChatConfirmCloseTimeout.current = window.setTimeout(() => {
-      setShowNewChatConfirm(false);
-      setIsNewChatConfirmClosing(false);
-      newChatConfirmCloseTimeout.current = null;
-    }, 180);
-  };
-  const confirmNewChat = () => {
-    if (isNewChatConfirmClosing) return;
-    setIsNewChatConfirmClosing(true);
-    if (newChatConfirmCloseTimeout.current) {
-      window.clearTimeout(newChatConfirmCloseTimeout.current);
-    }
-    newChatConfirmCloseTimeout.current = window.setTimeout(() => {
-      setShowNewChatConfirm(false);
-      setIsNewChatConfirmClosing(false);
-      newChatConfirmCloseTimeout.current = null;
-    }, 180);
+    // No conversation or no messages - directly start new chat
     abortRequestedRef.current = true;
     abortControllerRef.current?.abort();
     resetConversation();
+  };
+  const closeFeedbackReminder = () => {
+    if (!showFeedbackReminder || isFeedbackReminderClosing) return;
+    setIsFeedbackReminderClosing(true);
+    if (feedbackReminderCloseTimeout.current) {
+      window.clearTimeout(feedbackReminderCloseTimeout.current);
+    }
+    feedbackReminderCloseTimeout.current = window.setTimeout(() => {
+      setShowFeedbackReminder(false);
+      setIsFeedbackReminderClosing(false);
+      feedbackReminderCloseTimeout.current = null;
+    }, 180);
+  };
+  const closeFeedbackReminderAndOpenFeedback = () => {
+    if (!showFeedbackReminder || isFeedbackReminderClosing) return;
+    setIsFeedbackReminderClosing(true);
+    if (feedbackReminderCloseTimeout.current) {
+      window.clearTimeout(feedbackReminderCloseTimeout.current);
+    }
+    feedbackReminderCloseTimeout.current = window.setTimeout(() => {
+      setShowFeedbackReminder(false);
+      setIsFeedbackReminderClosing(false);
+      feedbackReminderCloseTimeout.current = null;
+      // Open the feedback modal
+      setIsConversationFeedbackOpen(true);
+    }, 180);
+  };
+  const skipFeedbackAndStartNewChat = () => {
+    if (isFeedbackReminderClosing) return;
+    setIsFeedbackReminderClosing(true);
+    if (feedbackReminderCloseTimeout.current) {
+      window.clearTimeout(feedbackReminderCloseTimeout.current);
+    }
+    feedbackReminderCloseTimeout.current = window.setTimeout(() => {
+      setShowFeedbackReminder(false);
+      setIsFeedbackReminderClosing(false);
+      feedbackReminderCloseTimeout.current = null;
+      // Directly start new chat
+      abortRequestedRef.current = true;
+      abortControllerRef.current?.abort();
+      resetConversation();
+    }, 180);
   };
   const closeZendeskNotFound = () => {
     if (!zendeskNotFound || isZendeskNotFoundClosing) return;
@@ -1589,8 +1719,8 @@ export default function Home() {
       if (abortConfirmCloseTimeout.current) {
         window.clearTimeout(abortConfirmCloseTimeout.current);
       }
-      if (newChatConfirmCloseTimeout.current) {
-        window.clearTimeout(newChatConfirmCloseTimeout.current);
+      if (feedbackReminderCloseTimeout.current) {
+        window.clearTimeout(feedbackReminderCloseTimeout.current);
       }
       if (metaOverlayCloseTimeout.current) {
         window.clearTimeout(metaOverlayCloseTimeout.current);
@@ -2586,7 +2716,7 @@ export default function Home() {
           activeConversationId={conversationId}
           onSelectConversation={handleSelectConversation}
           onSelectConversationById={handleSelectConversationById}
-          onNewChat={resetConversation}
+          onNewChat={requestNewChat}
           onDeleteConversation={handleDeleteConversation}
           onRenameConversation={handleRenameConversation}
           isLoading={conversationsLoading}
@@ -3589,6 +3719,19 @@ export default function Home() {
               ) : null}
             </div>
         </section>
+        {conversationId && messages.length > 0 ? (
+          <div className="george-conversation-feedback-container">
+            <ConversationFeedback
+              conversationId={conversationId}
+              currentRating={currentConversation?.feedback_rating ?? null}
+              currentComment={currentConversation?.feedback_comment ?? null}
+              isHighlighted={showConversationFeedbackHighlight}
+              isOpenExternal={isConversationFeedbackOpen}
+              onOpenChange={setIsConversationFeedbackOpen}
+              onSubmit={handleConversationFeedbackSubmit}
+            />
+          </div>
+        ) : null}
     </main>
       )}
       {metaOverlay && messages[metaOverlay.messageIndex] ? createPortal(
@@ -3893,27 +4036,33 @@ export default function Home() {
         </div>,
         document.body
       ) : null}
-      {showNewChatConfirm ? createPortal(
+      {showFeedbackReminder ? createPortal(
         <div
-          className={`george-confirm-overlay${isNewChatConfirmClosing ? ' is-closing' : ''}`}
+          className={`george-confirm-overlay${isFeedbackReminderClosing ? ' is-closing' : ''}`}
           role="dialog"
           aria-modal="true"
-          onClick={cancelNewChat}
+          onClick={closeFeedbackReminder}
         >
           <div
-            className={`george-confirm-modal${isNewChatConfirmClosing ? ' is-closing' : ''}`}
+            className={`george-confirm-modal${isFeedbackReminderClosing ? ' is-closing' : ''}`}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="george-confirm-title">Start a new conversation?</div>
+            <div className="george-confirm-title">
+              {currentConversation?.feedback_rating ? 'Is your feedback still accurate?' : 'Rate this conversation'}
+            </div>
             <div className="george-confirm-body">
-              Are you sure you want to start a new conversation? This will delete this session.
+              {currentConversation?.feedback_rating ? (
+                <>You previously rated this conversation. Would you like to update your feedback before starting a new conversation?</>
+              ) : (
+                <>Please consider rating this conversation before starting a new one. Your feedback helps us improve.</>
+              )}
             </div>
             <div className="george-confirm-actions">
-              <button type="button" className="george-confirm-cancel" onClick={cancelNewChat}>
-                Cancel
+              <button type="button" className="george-confirm-cancel" onClick={skipFeedbackAndStartNewChat}>
+                Skip
               </button>
-              <button type="button" className="george-confirm-accept" onClick={confirmNewChat}>
-                Start new
+              <button type="button" className="george-confirm-accept" onClick={closeFeedbackReminderAndOpenFeedback}>
+                {currentConversation?.feedback_rating ? 'Update Feedback' : 'Rate Now'}
               </button>
             </div>
           </div>
