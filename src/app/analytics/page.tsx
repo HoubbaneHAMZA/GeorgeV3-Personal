@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
 import AnalyticsOverview from '@/components/analytics/AnalyticsOverview';
 import AnalyticsTrends from '@/components/analytics/AnalyticsTrends';
 import AnalyticsTags from '@/components/analytics/AnalyticsTags';
 import AnalyticsCategories from '@/components/analytics/AnalyticsCategories';
 import AnalyticsFeedbackList from '@/components/analytics/AnalyticsFeedbackList';
-import { Download, Calendar, ChevronDown, User, Globe, MessageSquare, MessagesSquare } from 'lucide-react';
+import { Download, Calendar, ChevronDown, User, Globe, MessageSquare, MessagesSquare, RefreshCw } from 'lucide-react';
+import { useAnalyticsBundle, isConversationBundle, type AnalyticsBundle } from '@/hooks/useAnalyticsBundle';
+import { useAccessToken } from '@/hooks/useAccessToken';
 
 type AnalyticsView = 'message' | 'conversation';
 type AnalyticsScope = 'global' | 'personal';
@@ -19,114 +20,8 @@ type DateRange = {
   label: string;
 };
 
-// Message view types
-type MessageOverviewData = {
-  total_runs: number;
-  feedback_count: number;
-  feedback_rate: number;
-  unusable_rate: number;
-  problematic_rate: number;
-  usable_rate: number;
-  good_rate: number;
-  perfect_rate: number;
-  avg_cost: number;
-  avg_response_time: number;
-};
-
-type MessageTrendData = {
-  date: string;
-  total: number;
-  unusable: number;
-  problematic: number;
-  usable: number;
-  good: number;
-  perfect: number;
-};
-
-type TagData = {
-  tag: string;
-  count: number;
-  unusable: number;
-  problematic: number;
-};
-
-type FeedbackItem = {
-  id: string;
-  created_at: string;
-  user_input: string;
-  response_content: string;
-  feedback_rating: 'unusable' | 'problematic' | 'usable' | 'good' | 'perfect';
-  feedback_tags: string[] | null;
-  feedback_comment: string | null;
-  trace_data: unknown;
-};
-
-type MessageAnalyticsBundle = {
-  overview: MessageOverviewData;
-  trends: MessageTrendData[];
-  tags: TagData[];
-  feedback_list: {
-    interactions: FeedbackItem[];
-    page: number;
-    limit: number;
-  };
-};
-
-// Conversation view types
-type ConversationOverviewData = {
-  total_conversations: number;
-  feedback_count: number;
-  feedback_rate: number;
-  solved_rate: number;
-  partially_solved_rate: number;
-  not_solved_rate: number;
-  avg_cost: number;
-  avg_exchanges: number;
-};
-
-type ConversationTrendData = {
-  date: string;
-  total: number;
-  solved: number;
-  partially_solved: number;
-  not_solved: number;
-};
-
-type CategoryData = {
-  category: string;
-  count: number;
-  solved: number;
-  partially_solved: number;
-  not_solved: number;
-};
-
-type ConversationItem = {
-  id: string;
-  title: string;
-  category: string | null;
-  sub_category: string | null;
-  feedback_rating: 'solved' | 'partially_solved' | 'not_solved';
-  feedback_comment: string | null;
-  message_count: number;
-  created_at: string;
-};
-
-type ConversationAnalyticsBundle = {
-  overview: ConversationOverviewData;
-  trends: ConversationTrendData[];
-  categories: CategoryData[];
-  feedback_list: {
-    conversations: ConversationItem[];
-    page: number;
-    limit: number;
-  };
-};
-
-type AnalyticsBundle = MessageAnalyticsBundle | ConversationAnalyticsBundle;
-
-function isConversationBundle(bundle: AnalyticsBundle): bundle is ConversationAnalyticsBundle {
-  return 'categories' in bundle;
-}
+type MessageAnalyticsBundle = Extract<AnalyticsBundle, { tags: unknown }>;
+type ConversationAnalyticsBundle = Extract<AnalyticsBundle, { categories: unknown }>;
 
 const DATE_PRESETS: { label: string; getDates: () => { from: string; to: string } }[] = [
   {
@@ -165,7 +60,7 @@ const DATE_PRESETS: { label: string; getDates: () => { from: string; to: string 
 export default function AnalyticsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [isLoading, setIsLoading] = useState(true);
+  const accessToken = useAccessToken();
   const [dateRange, setDateRange] = useState<DateRange>(() => {
     const preset = DATE_PRESETS[1]; // Default to last 30 days
     const dates = preset.getDates();
@@ -173,12 +68,9 @@ export default function AnalyticsPage() {
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [bundle, setBundle] = useState<AnalyticsBundle | null>(null);
-  const [bundleLoading, setBundleLoading] = useState(false);
-  const [bundleError, setBundleError] = useState<string | null>(null);
   const [ratingFilter, setRatingFilter] = useState<string>('');
   const [page, setPage] = useState(1);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   // Read initial values from URL params
   const urlView = searchParams.get('view');
@@ -191,6 +83,18 @@ export default function AnalyticsPage() {
   );
   const limit = 10;
 
+  // Use SWR for data fetching with caching
+  const { bundle, isLoading: bundleLoading, error: bundleError, refresh } = useAnalyticsBundle({
+    accessToken,
+    from: dateRange.from,
+    to: dateRange.to,
+    view,
+    scope,
+    ratingFilter,
+    page,
+    limit
+  });
+
   // Update URL when view or scope changes
   const updateUrl = useCallback((newView: AnalyticsView, newScope: AnalyticsScope) => {
     const params = new URLSearchParams();
@@ -198,19 +102,6 @@ export default function AnalyticsPage() {
     if (newScope !== 'global') params.set('scope', newScope);
     const queryString = params.toString();
     router.replace(`/analytics${queryString ? `?${queryString}` : ''}`, { scroll: false });
-  }, [router]);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session) {
-        router.push('/login');
-        return;
-      }
-      setAccessToken(sessionData.session.access_token);
-      setIsLoading(false);
-    };
-    checkAuth();
   }, [router]);
 
   const handleDatePreset = useCallback((preset: typeof DATE_PRESETS[number]) => {
@@ -265,50 +156,6 @@ export default function AnalyticsPage() {
     setShowExportMenu(false);
   }, [accessToken, dateRange, scope, view]);
 
-  useEffect(() => {
-    const fetchBundle = async () => {
-      if (!accessToken) return;
-      setBundleLoading(true);
-      setBundleError(null);
-
-      const params = new URLSearchParams();
-      if (dateRange.from) params.set('from', dateRange.from);
-      if (dateRange.to) params.set('to', dateRange.to);
-      params.set('interval', 'day');
-      if (ratingFilter) params.set('rating', ratingFilter);
-      params.set('page', String(page));
-      params.set('limit', String(limit));
-      params.set('scope', scope);
-      params.set('view', view);
-
-      try {
-        const response = await fetch(`/api/feedback-analytics/bundle?${params}`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch analytics data');
-        }
-
-        const result = await response.json();
-        setBundle(result as AnalyticsBundle);
-      } catch (err) {
-        setBundleError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setBundleLoading(false);
-      }
-    };
-
-    fetchBundle();
-  }, [accessToken, dateRange.from, dateRange.to, ratingFilter, page, limit, scope, view]);
-
-  if (isLoading) {
-    return (
-      <main className="george-analytics">
-        <div className="george-analytics-loading">Loading...</div>
-      </main>
-    );
-  }
 
   // Determine which data to show based on view
   const isConversation = view === 'conversation' && bundle && isConversationBundle(bundle);
@@ -417,6 +264,21 @@ export default function AnalyticsPage() {
                   </div>
                 )}
               </div>
+
+              {/* Refresh Button */}
+              <button
+                type="button"
+                className={`george-analytics-refresh-btn${isManualRefreshing ? ' is-refreshing' : ''}`}
+                onClick={async () => {
+                  setIsManualRefreshing(true);
+                  await refresh();
+                  setIsManualRefreshing(false);
+                }}
+                disabled={isManualRefreshing}
+                title="Refresh data"
+              >
+                <RefreshCw size={16} className={isManualRefreshing ? 'spin' : ''} />
+              </button>
             </div>
           </div>
 

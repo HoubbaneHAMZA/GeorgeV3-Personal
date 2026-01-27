@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import yaml from 'yaml';
+import { useFaqData } from '@/hooks/useFaqData';
 
 // Metadata item structure from applicable_combinations (supports both formats)
 interface MetadataItem {
@@ -386,9 +387,9 @@ function ProductBadges({ combinations }: { combinations: MetadataItem[] | null }
 }
 
 export default function FaqPage() {
-  const [qaiItems, setQaiItems] = useState<QAIRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Use SWR-cached FAQ data
+  const { qaiItems, isLoading: loading, error, refresh: refreshFaqs } = useFaqData<QAIRecord>();
+
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [metadataVisibleIds, setMetadataVisibleIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -439,34 +440,6 @@ export default function FaqPage() {
   });
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'submitting' | 'polling' | 'success' | 'error'>('idle');
   const [updateMessage, setUpdateMessage] = useState<string>('');
-
-
-  const fetchFaqs = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/faq');
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch FAQs');
-      }
-
-      const { qaiItems: items } = await response.json();
-      console.log('[FAQ] Fetched QAIs count:', items.length);
-      setQaiItems(items);
-    } catch (err) {
-      console.error('[FAQ] Fetch error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load FAQs');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchFaqs();
-  }, [fetchFaqs]);
 
   // Extract available filter options from data
   const filterOptions = useMemo(() => {
@@ -577,7 +550,6 @@ export default function FaqPage() {
       setOsVersionFilter('');
     }
   }, [osFilter, filterOptions.os]);
-
   // Helper to get ticket count from item
   const getTicketCount = (item: QAIRecord): number => {
     const content = parseQAIContent(item.exact_content);
@@ -810,7 +782,7 @@ export default function FaqPage() {
             setUpdateStatus('success');
             setUpdateMessage(status.result.message);
             // Refresh the FAQ list after successful update
-            await fetchFaqs();
+            await refreshFaqs();
             // Auto-close edit mode after 2 seconds
             setTimeout(() => {
               cancelEditing();
@@ -839,7 +811,7 @@ export default function FaqPage() {
 
     setUpdateStatus('error');
     setUpdateMessage('Update timed out. Please check the FAQ list manually.');
-  }, [fetchFaqs]);
+  }, [refreshFaqs]);
 
   // Submit QAI update
   const submitUpdate = async (docId: string) => {
@@ -1310,7 +1282,7 @@ export default function FaqPage() {
         {error && (
           <section className="george-faq-error">
             <p>Failed to load FAQs: {error}</p>
-            <button type="button" onClick={fetchFaqs} className="george-faq-retry">
+            <button type="button" onClick={() => refreshFaqs()} className="george-faq-retry">
               Retry
             </button>
           </section>

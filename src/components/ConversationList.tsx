@@ -28,6 +28,8 @@ type ConversationListProps = {
   isLoading: boolean;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onPrefetchConversation?: (conversationId: string) => void;
+  onCancelPrefetch?: () => void;
 };
 
 function formatRelativeTime(dateString: string): string {
@@ -57,7 +59,9 @@ export default function ConversationList({
   onRenameConversation,
   isLoading,
   isCollapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  onPrefetchConversation,
+  onCancelPrefetch
 }: ConversationListProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -199,6 +203,8 @@ export default function ConversationList({
                     type="button"
                     className="conversation-item-content"
                     onClick={() => onSelectConversation(conv)}
+                    onMouseEnter={() => onPrefetchConversation?.(conv.id)}
+                    onMouseLeave={() => onCancelPrefetch?.()}
                   >
                     <span className="conversation-item-title">
                       {conv.title || 'Untitled conversation'}
