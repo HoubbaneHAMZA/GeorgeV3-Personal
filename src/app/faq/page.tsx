@@ -389,9 +389,10 @@ export default function FaqPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [metadataVisibleIds, setMetadataVisibleIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'new' | 'modified'>('new');
-  const [showMetadata, setShowMetadata] = useState(true);
+  const [showAllMetadata, setShowAllMetadata] = useState(false);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -507,6 +508,23 @@ export default function FaqPage() {
       }
       return next;
     });
+  };
+
+  const toggleMetadata = (key: string) => {
+    setMetadataVisibleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Check if metadata should be visible for a specific card
+  const isMetadataVisible = (key: string) => {
+    return showAllMetadata || metadataVisibleIds.has(key);
   };
 
   // Start editing a QAI
@@ -717,17 +735,17 @@ export default function FaqPage() {
 
           <button
             type="button"
-            className={`george-faq-metadata-toggle ${showMetadata ? 'is-active' : ''}`}
-            onClick={() => setShowMetadata(!showMetadata)}
-            title={showMetadata ? 'Hide product & version info' : 'Show product & version info'}
+            className={`george-faq-metadata-toggle ${showAllMetadata ? 'is-active' : ''}`}
+            onClick={() => setShowAllMetadata(!showAllMetadata)}
+            title={showAllMetadata ? 'Hide all metadata' : 'Show all metadata'}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <rect x="1" y="3" width="14" height="2" rx="1" fill="currentColor"/>
               <rect x="1" y="7" width="10" height="2" rx="1" fill="currentColor"/>
               <rect x="1" y="11" width="6" height="2" rx="1" fill="currentColor"/>
             </svg>
-            <span>Metadata</span>
-            <span className={`george-faq-toggle-indicator ${showMetadata ? 'is-on' : ''}`} />
+            <span>Show All</span>
+            <span className={`george-faq-toggle-indicator ${showAllMetadata ? 'is-on' : ''}`} />
           </button>
         </section>
 
@@ -913,9 +931,19 @@ export default function FaqPage() {
                   </button>
 
                   <div className="george-faq-card-meta">
+                    {/* Category and Sub-category - always visible */}
+                    <div className="george-faq-category-row">
+                      {content.category && (
+                        <span className="george-faq-category-badge">{content.category}</span>
+                      )}
+                      {content.sub_category && (
+                        <span className="george-faq-subcategory-badge">{content.sub_category}</span>
+                      )}
+                    </div>
+
                     <div className="george-faq-meta-row">
-                      {/* Product pills */}
-                      {showMetadata && (
+                      {/* Product pills - shown when metadata is visible */}
+                      {isMetadataVisible(key) && (
                         <div className="george-faq-pills">
                           <ProductBadges combinations={item.applicable_combinations} />
                         </div>
@@ -956,15 +984,42 @@ export default function FaqPage() {
                         </div>
                       )}
 
-                      {content.intervention_detail && (
-                        <div className="george-faq-note">
-                          <span className="george-faq-note-label">Note</span>
-                          <span className="george-faq-note-text">{content.intervention_detail}</span>
+                      {/* Intervention Type and Detail */}
+                      {(content.intervention_type || content.intervention_detail) && (
+                        <div className="george-faq-intervention-section">
+                          {content.intervention_type && (
+                            <div className="george-faq-intervention-type">
+                              <span className="george-faq-intervention-label">Intervention Type</span>
+                              <span className="george-faq-intervention-value">{content.intervention_type}</span>
+                            </div>
+                          )}
+                          {content.intervention_detail && (
+                            <div className="george-faq-intervention-detail">
+                              <span className="george-faq-intervention-label">Intervention Detail</span>
+                              <span className="george-faq-intervention-text">{content.intervention_detail}</span>
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      {/* Edit button */}
-                      <div className="george-faq-actions">
+                      {/* Card footer with metadata toggle (left) and edit button (right) */}
+                      <div className="george-faq-card-footer">
+                        <button
+                          type="button"
+                          className={`george-faq-card-metadata-toggle ${isMetadataVisible(key) ? 'is-active' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMetadata(key);
+                          }}
+                          title={isMetadataVisible(key) ? 'Hide software/OS metadata' : 'Show software/OS metadata'}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                            <rect x="2" y="4" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+                            <rect x="2" y="7.25" width="8" height="1.5" rx="0.75" fill="currentColor"/>
+                            <rect x="2" y="10.5" width="5" height="1.5" rx="0.75" fill="currentColor"/>
+                          </svg>
+                          <span>{isMetadataVisible(key) ? 'Hide' : 'Show'} Metadata</span>
+                        </button>
                         <button
                           type="button"
                           className="george-faq-edit-btn"
@@ -1094,15 +1149,39 @@ export default function FaqPage() {
                         </div>
                       </div>
 
-                      <div className="george-faq-form-group">
-                        <label className="george-faq-form-label">Note / Intervention Detail</label>
-                        <textarea
-                          className="george-faq-form-textarea"
-                          rows={2}
-                          value={editForm.intervention_detail}
-                          onChange={(e) => updateFormField('intervention_detail', e.target.value)}
-                          disabled={updateStatus === 'submitting' || updateStatus === 'polling'}
-                        />
+                      <div className="george-faq-form-row">
+                        <div className="george-faq-form-group">
+                          <label className="george-faq-form-label">Intervention Type</label>
+                          <select
+                            className="george-faq-form-select"
+                            value={editForm.intervention_type}
+                            onChange={(e) => updateFormField('intervention_type', e.target.value)}
+                            disabled={updateStatus === 'submitting' || updateStatus === 'polling'}
+                          >
+                            <option value="">Select type...</option>
+                            <option value="troubleshooting">Troubleshooting</option>
+                            <option value="how-to">How-to / Tutorial</option>
+                            <option value="information">Information</option>
+                            <option value="workaround">Workaround</option>
+                            <option value="known-issue">Known Issue</option>
+                            <option value="feature-request">Feature Request</option>
+                            <option value="configuration">Configuration</option>
+                            <option value="installation">Installation</option>
+                            <option value="activation">Activation</option>
+                            <option value="billing">Billing / Licensing</option>
+                          </select>
+                        </div>
+                        <div className="george-faq-form-group">
+                          <label className="george-faq-form-label">Intervention Detail</label>
+                          <input
+                            type="text"
+                            className="george-faq-form-input"
+                            value={editForm.intervention_detail}
+                            onChange={(e) => updateFormField('intervention_detail', e.target.value)}
+                            disabled={updateStatus === 'submitting' || updateStatus === 'polling'}
+                            placeholder="Brief note about the intervention..."
+                          />
+                        </div>
                       </div>
 
                       <div className="george-faq-form-actions">
