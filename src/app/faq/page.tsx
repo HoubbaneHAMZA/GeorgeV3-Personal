@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase/client';
 import yaml from 'yaml';
 
 // Metadata item structure from applicable_combinations (supports both formats)
@@ -75,8 +75,11 @@ interface JobStatus {
 
 // Edge function configuration
 const EDGE_FUNCTION_URL = 'https://oqwokjqdjybzoajpbqtq.supabase.co/functions/v1/qai-update';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://oqwokjqdjybzoajpbqtq.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_ANON_KEY) {
+  throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required for FAQ updates');
+}
 
 // Category and Sub-category mapping (normalized from production data)
 const CATEGORY_SUBCATEGORY_MAP: Record<string, string[]> = {
@@ -409,13 +412,7 @@ export default function FaqPage() {
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'submitting' | 'polling' | 'success' | 'error'>('idle');
   const [updateMessage, setUpdateMessage] = useState<string>('');
 
-  // Create Supabase client for auth
-  const supabase = useMemo(() => {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-    return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  }, []);
-
-  const fetchFaqs = async () => {
+  const fetchFaqs = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -436,11 +433,11 @@ export default function FaqPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchFaqs();
-  }, []);
+  }, [fetchFaqs]);
 
   // Helper to get ticket count from item
   const getTicketCount = (item: QAIRecord): number => {
@@ -602,16 +599,10 @@ export default function FaqPage() {
 
     setUpdateStatus('error');
     setUpdateMessage('Update timed out. Please check the FAQ list manually.');
-  }, []);
+  }, [fetchFaqs]);
 
   // Submit QAI update
   const submitUpdate = async (docId: string) => {
-    if (!supabase) {
-      setUpdateStatus('error');
-      setUpdateMessage('Supabase client not initialized');
-      return;
-    }
-
     setUpdateStatus('submitting');
     setUpdateMessage('Submitting update...');
 
@@ -619,9 +610,20 @@ export default function FaqPage() {
       // Get the current session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-      if (sessionError || !session) {
+      if (sessionError) {
+        console.error('[FAQ] Session error:', sessionError);
+        throw new Error(`Authentication error: ${sessionError.message}`);
+      }
+
+      if (!session) {
         throw new Error('You must be logged in to update FAQs');
       }
+
+      if (!session.access_token) {
+        throw new Error('No access token available in session');
+      }
+
+      console.log('[FAQ] Submitting update with session for user:', session.user?.email);
 
       // Build request body with only non-empty fields
       const body: Record<string, string> = { doc_id: docId };
@@ -632,6 +634,9 @@ export default function FaqPage() {
       if (editForm.sub_category.trim()) body.sub_category = editForm.sub_category;
       if (editForm.intervention_type.trim()) body.intervention_type = editForm.intervention_type;
       if (editForm.intervention_detail.trim()) body.intervention_detail = editForm.intervention_detail;
+
+      console.log('[FAQ] Calling edge function:', EDGE_FUNCTION_URL);
+      console.log('[FAQ] Request body:', body);
 
       const response = await fetch(EDGE_FUNCTION_URL, {
         method: 'POST',
@@ -644,9 +649,12 @@ export default function FaqPage() {
       });
 
       const result = await response.json();
+      console.log('[FAQ] Edge function response:', { status: response.status, result });
 
       if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to submit update');
+        const errorMessage = result.error || result.message || `Failed to submit update (${response.status})`;
+        console.error('[FAQ] Edge function error:', errorMessage, result);
+        throw new Error(errorMessage);
       }
 
       // Update submitted, now poll for completion
