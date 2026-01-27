@@ -1020,19 +1020,12 @@ html, body {
   }
 }
 
-/* FAQ Process Section - Full-width with brand colors */
+/* FAQ Process Section - Full width matching cards */
 .george-faq-process {
-  /* Break out of container to full viewport width */
-  width: 100vw;
-  position: relative;
-  left: 50%;
-  right: 50%;
-  margin-left: -50vw;
-  margin-right: -50vw;
   margin-bottom: 32px;
   background: linear-gradient(180deg, rgba(207, 92, 42, 0.04) 0%, rgba(207, 92, 42, 0.01) 100%);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
 .george-faq-process-details {
@@ -1318,6 +1311,188 @@ html, body {
 @media (min-width: 1024px) {
   .george-faq-list {
     gap: 20px;
+  }
+}
+
+/* FAQ Pagination */
+.george-faq-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 32px;
+  padding: 20px 24px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.george-faq-pagination-info {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+
+.george-faq-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.george-faq-pagination-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--muted);
+}
+
+.george-faq-pagination-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(207, 92, 42, 0.04);
+}
+
+.george-faq-pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.george-faq-pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.george-faq-pagination-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--muted);
+  font-family: 'Outfit', system-ui, sans-serif;
+}
+
+.george-faq-pagination-page:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text);
+}
+
+.george-faq-pagination-page.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.george-faq-pagination-ellipsis {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 600px) {
+  .george-faq-pagination {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .george-faq-pagination-info {
+    text-align: center;
+  }
+
+  .george-faq-pagination-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .george-faq-pagination-page {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    font-size: 0.85rem;
+  }
+}
+
+/* Back to Top Button */
+.george-faq-back-to-top {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--accent, #cf5c2a);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: 'Outfit', system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(207, 92, 42, 0.35);
+  transition: all 0.2s ease;
+  z-index: 100;
+  animation: fadeInUp 0.3s ease;
+}
+
+.george-faq-back-to-top:hover {
+  background: #b8512a;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(207, 92, 42, 0.45);
+}
+
+.george-faq-back-to-top:active {
+  transform: translateY(0);
+}
+
+.george-faq-back-to-top svg {
+  flex-shrink: 0;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .george-faq-back-to-top {
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 16px;
+    font-size: 0.8rem;
+  }
+  
+  .george-faq-back-to-top span {
+    display: none;
+  }
+  
+  .george-faq-back-to-top {
+    padding: 12px;
+    border-radius: 50%;
   }
 }
 
