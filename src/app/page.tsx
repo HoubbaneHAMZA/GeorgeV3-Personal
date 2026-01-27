@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import FeedbackButtons, { type FeedbackRating } from '@/components/FeedbackButtons';
+import ConversationList, { type Conversation } from '@/components/ConversationList';
+import ConversationFeedback from '@/components/ConversationFeedback';
 
 function CollapsibleStep({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -340,6 +342,7 @@ export default function Home() {
   const agentInteractionsEndpoint = '/api/agent-interactions';
   const sessionStorageKey = useMemo(() => `george:session:${pathname}`, [pathname]);
   const messagesStorageKey = useMemo(() => `george:messages:${pathname}`, [pathname]);
+  const conversationIdStorageKey = useMemo(() => `george:conversationId:${pathname}`, [pathname]);
   const [input, setInput] = useState('');
   const [ticketError, setTicketError] = useState('');
   const [userEmailDraft, setUserEmailDraft] = useState('');
@@ -357,18 +360,18 @@ export default function Home() {
   const dropdownAnimTimeout = useRef<number | null>(null);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const [agentInterrupted, setAgentInterrupted] = useState<string | null>(null);
-  const [showNewChatConfirm, setShowNewChatConfirm] = useState(false);
+  const [showFeedbackReminder, setShowFeedbackReminder] = useState(false);
+  const [isFeedbackReminderClosing, setIsFeedbackReminderClosing] = useState(false);
+  const feedbackReminderCloseTimeout = useRef<number | null>(null);
   const [isZendeskNotFoundClosing, setIsZendeskNotFoundClosing] = useState(false);
   const [isAgentInterruptedClosing, setIsAgentInterruptedClosing] = useState(false);
   const [isAbortConfirmClosing, setIsAbortConfirmClosing] = useState(false);
-  const [isNewChatConfirmClosing, setIsNewChatConfirmClosing] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortRequestedRef = useRef(false);
   const runModeRef = useRef<'initial' | 'chat' | null>(null);
   const zendeskCloseTimeout = useRef<number | null>(null);
   const agentInterruptedCloseTimeout = useRef<number | null>(null);
   const abortConfirmCloseTimeout = useRef<number | null>(null);
-  const newChatConfirmCloseTimeout = useRef<number | null>(null);
   const [dropdownRect, setDropdownRect] = useState<{ left: number; top: number; width: number } | null>(null);
   const [dropdownReady, setDropdownReady] = useState(false);
   const [dropdownWidth, setDropdownWidth] = useState<number | null>(null);
@@ -389,8 +392,22 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationsLoading, setConversationsLoading] = useState(true);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [showConversationFeedbackHighlight, setShowConversationFeedbackHighlight] = useState(false);
+  const [isConversationFeedbackOpen, setIsConversationFeedbackOpen] = useState(false);
+  const conversationFeedbackHighlightTimeout = useRef<number | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sidebarCollapsed') === 'true';
+    }
+    return false;
+  });
   const [error, setError] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const infoRef = useRef<HTMLDivElement | null>(null);
   const traceBufferRef = useRef<AgentTraceData>({});
   const [steps, setSteps] = useState<{
@@ -436,6 +453,15 @@ export default function Home() {
         ? statusSteps.length - 1
         : Math.max(activeStatusIndex, 0);
   const isChatMode = messages.length > 0;
+  const currentConversation = useMemo(
+    () => conversations.find((c) => c.id === conversationId) ?? null,
+    [conversations, conversationId]
+  );
+  // Count exchanges (pairs of user + assistant messages)
+  const exchangeCount = useMemo(
+    () => Math.floor(messages.filter((m) => m.role === 'assistant').length),
+    [messages]
+  );
   // Extract ticket number if input starts with # followed by numbers only (initial mode only).
   const ticketMatch = !isChatMode ? input.match(/^(#\d+)(.*)$/) : null;
   const ticketTag = ticketMatch ? ticketMatch[1] : null;
@@ -538,6 +564,20 @@ export default function Home() {
   const showGeneratedBy = statusDone;
   const showInitialLoader = steps.started && !statusDone && !sessionId && !initialStreamStarted;
   const showTranscript = messages.length > 0 && (statusDone || sessionId || initialStreamStarted);
+
+  // Fetch current user name for greeting
+  useEffect(() => {
+    const fetchUserName = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const user = sessionData?.session?.user;
+      // Try to get full_name from user metadata, fallback to email prefix
+      const fullName = user?.user_metadata?.full_name;
+      const emailPrefix = user?.email?.split('@')[0];
+      setCurrentUserName(fullName || emailPrefix || null);
+    };
+    fetchUserName();
+  }, []);
+
   useEffect(() => {
     if (!isTicketMode) return;
     if (attachments.length > 0) {
@@ -801,10 +841,12 @@ export default function Home() {
     setLoading(false);
     setMessages([]);
     setSessionId(null);
+    setConversationId(null);
     traceBufferRef.current = {};
     try {
       localStorage.removeItem(sessionStorageKey);
       localStorage.removeItem(messagesStorageKey);
+      localStorage.removeItem(conversationIdStorageKey);
     } catch {
       // Ignore storage failures (private mode, SSR).
     }
@@ -818,6 +860,279 @@ export default function Home() {
     setInitialStreamStarted(false);
   };
 
+  // Fetch conversations list with retry logic
+  const fetchConversations = useCallback(async (retries = 2) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) return;
+
+      const response = await fetch('/api/conversations', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const fetchedConversations = data.conversations || [];
+        setConversations(fetchedConversations);
+
+        // Check for orphaned localStorage data - if we have a sessionId that doesn't exist in the database
+        const storedSessionId = localStorage.getItem(sessionStorageKey);
+        if (storedSessionId && fetchedConversations.length >= 0) {
+          const sessionExists = fetchedConversations.some(
+            (conv: { session_id: string }) => conv.session_id === storedSessionId
+          );
+          if (!sessionExists) {
+            // Clear orphaned local data
+            console.log('[fetchConversations] Clearing orphaned localStorage data for session:', storedSessionId);
+            localStorage.removeItem(sessionStorageKey);
+            localStorage.removeItem(messagesStorageKey);
+            localStorage.removeItem(conversationIdStorageKey);
+            setSessionId(null);
+            setConversationId(null);
+            setMessages([]);
+          }
+        }
+      } else if (response.status >= 500 && retries > 0) {
+        // Retry on server errors (cold start, connection pool issues)
+        await new Promise((r) => setTimeout(r, 1000));
+        return fetchConversations(retries - 1);
+      }
+    } catch (err) {
+      console.error('Failed to fetch conversations:', err);
+      if (retries > 0) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return fetchConversations(retries - 1);
+      }
+    } finally {
+      setConversationsLoading(false);
+    }
+  }, [sessionStorageKey, messagesStorageKey]);
+
+  // Load conversations on mount
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  // Persist sidebar collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  // Highlight conversation feedback after every 5 exchanges
+  // If no feedback yet: remind to submit. If feedback exists: remind to verify it's still accurate.
+  useEffect(() => {
+    if (exchangeCount > 0 && exchangeCount % 5 === 0) {
+      setShowConversationFeedbackHighlight(true);
+      if (conversationFeedbackHighlightTimeout.current) {
+        window.clearTimeout(conversationFeedbackHighlightTimeout.current);
+      }
+      conversationFeedbackHighlightTimeout.current = window.setTimeout(() => {
+        setShowConversationFeedbackHighlight(false);
+        conversationFeedbackHighlightTimeout.current = null;
+      }, 3000);
+    }
+  }, [exchangeCount]);
+
+  // Cleanup feedback highlight timeout
+  useEffect(() => {
+    return () => {
+      if (conversationFeedbackHighlightTimeout.current) {
+        window.clearTimeout(conversationFeedbackHighlightTimeout.current);
+      }
+    };
+  }, []);
+
+  // Submit conversation feedback
+  const handleConversationFeedbackSubmit = useCallback(async (
+    rating: 'solved' | 'partially_solved' | 'not_solved' | null,
+    comment: string
+  ) => {
+    if (!conversationId) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+    if (!accessToken) return;
+
+    const response = await fetch(`/api/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        feedback_rating: rating,
+        feedback_comment: comment || null
+      })
+    });
+
+    if (response.ok) {
+      // Update the local conversations list with the new feedback
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? { ...c, feedback_rating: rating, feedback_comment: comment || null }
+            : c
+        )
+      );
+      setShowConversationFeedbackHighlight(false);
+    }
+  }, [conversationId]);
+
+  // Handle selecting a conversation from the list (with retry logic)
+  const handleSelectConversation = useCallback(async (conversation: Conversation, retries = 2) => {
+    // Skip if already on this conversation
+    if (conversationId === conversation.id) return;
+
+    // Start transition animation
+    setIsLoadingConversation(true);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) {
+        setIsLoadingConversation(false);
+        return;
+      }
+
+      const response = await fetch(`/api/conversations/${conversation.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Clear messages first for smooth transition
+        setMessages([]);
+
+        // Small delay for fade-out effect
+        await new Promise((r) => setTimeout(r, 150));
+
+        // Use session_id from API response (more reliable than the passed conversation object)
+        setSessionId(data.conversation?.session_id || conversation.session_id);
+        setConversationId(conversation.id);
+
+        // Convert messages from API format to ChatMessage format
+        const loadedMessages: ChatMessage[] = [];
+        for (const msg of data.messages || []) {
+          // Add user message
+          loadedMessages.push({
+            role: 'user',
+            content: msg.user_input
+          });
+          // Add assistant response
+          loadedMessages.push({
+            role: 'assistant',
+            content: msg.response_content,
+            sources: msg.response_sources,
+            trace: msg.trace_data,
+            timing: msg.timing_server_ms ? { server_ms: msg.timing_server_ms, round_trip_ms: 0 } : undefined,
+            interactionId: msg.id,
+            feedbackRating: msg.feedback_rating ? (msg.feedback_rating as FeedbackRating) : undefined,
+            feedbackReady: true,
+            originalSessionId: conversation.session_id,
+            originalUserInput: msg.user_input
+          });
+        }
+
+        setMessages(loadedMessages);
+        setHasResponse(loadedMessages.length > 0);
+        setStatusDone(true);
+
+        // End transition animation after messages load
+        setTimeout(() => setIsLoadingConversation(false), 50);
+      } else if (response.status >= 500 && retries > 0) {
+        // Retry on server errors
+        await new Promise((r) => setTimeout(r, 1000));
+        return handleSelectConversation(conversation, retries - 1);
+      } else {
+        setIsLoadingConversation(false);
+      }
+    } catch (err) {
+      console.error('Failed to load conversation:', err);
+      if (retries > 0) {
+        await new Promise((r) => setTimeout(r, 1000));
+        return handleSelectConversation(conversation, retries - 1);
+      }
+      setIsLoadingConversation(false);
+    }
+  }, [conversationId]);
+
+  // Handle selecting a conversation by ID (for search results)
+  const handleSelectConversationById = useCallback((id: string) => {
+    // Try to find the conversation in our list
+    const conversation = conversations.find((c) => c.id === id);
+    if (conversation) {
+      handleSelectConversation(conversation);
+    } else {
+      // If not found in list, create a minimal conversation object
+      // The handler will fetch the full details
+      handleSelectConversation({
+        id,
+        session_id: '',
+        title: null,
+        created_at: '',
+        updated_at: '',
+        is_archived: false,
+        message_count: 0,
+        feedback_rating: null,
+        feedback_comment: null,
+        category: null,
+        sub_category: null
+      });
+    }
+  }, [conversations, handleSelectConversation]);
+
+  // Handle deleting a conversation
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) return;
+
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (response.ok) {
+        setConversations((prev) => prev.filter((c) => c.id !== id));
+        // If we deleted the current conversation, reset
+        if (conversationId === id) {
+          resetConversation();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+    }
+  }, [conversationId, resetConversation]);
+
+  // Handle renaming a conversation
+  const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) return;
+
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title: newTitle })
+      });
+
+      if (response.ok) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to rename conversation:', err);
+    }
+  }, []);
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem(sessionStorageKey);
@@ -828,6 +1143,18 @@ export default function Home() {
       // Ignore storage failures.
     }
   }, [sessionStorageKey, sessionId]);
+
+  // Restore conversationId from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(conversationIdStorageKey);
+      if (stored && !conversationId) {
+        setConversationId(stored);
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [conversationIdStorageKey, conversationId]);
 
   useEffect(() => {
     try {
@@ -932,6 +1259,19 @@ export default function Home() {
       // Ignore storage failures.
     }
   }, [sessionId, sessionStorageKey]);
+
+  // Persist conversationId to localStorage
+  useEffect(() => {
+    try {
+      if (!conversationId) {
+        localStorage.removeItem(conversationIdStorageKey);
+        return;
+      }
+      localStorage.setItem(conversationIdStorageKey, conversationId);
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [conversationId, conversationIdStorageKey]);
 
   useEffect(() => {
     try {
@@ -1129,6 +1469,7 @@ export default function Home() {
     try {
       localStorage.removeItem(messagesStorageKey);
       localStorage.removeItem(sessionStorageKey);
+      localStorage.removeItem(conversationIdStorageKey);
     } catch {
       // Ignore storage failures.
     }
@@ -1147,6 +1488,7 @@ export default function Home() {
     try {
       localStorage.removeItem(messagesStorageKey);
       localStorage.removeItem(sessionStorageKey);
+      localStorage.removeItem(conversationIdStorageKey);
     } catch {
       // Ignore storage failures.
     }
@@ -1226,35 +1568,58 @@ export default function Home() {
     }
   };
   const requestNewChat = () => {
-    setIsNewChatConfirmClosing(false);
-    setShowNewChatConfirm(true);
-  };
-  const cancelNewChat = () => {
-    if (!showNewChatConfirm || isNewChatConfirmClosing) return;
-    setIsNewChatConfirmClosing(true);
-    if (newChatConfirmCloseTimeout.current) {
-      window.clearTimeout(newChatConfirmCloseTimeout.current);
+    // Show feedback reminder popup if there's a conversation with messages
+    if (conversationId && messages.length > 0) {
+      setIsFeedbackReminderClosing(false);
+      setShowFeedbackReminder(true);
+      return;
     }
-    newChatConfirmCloseTimeout.current = window.setTimeout(() => {
-      setShowNewChatConfirm(false);
-      setIsNewChatConfirmClosing(false);
-      newChatConfirmCloseTimeout.current = null;
-    }, 180);
-  };
-  const confirmNewChat = () => {
-    if (isNewChatConfirmClosing) return;
-    setIsNewChatConfirmClosing(true);
-    if (newChatConfirmCloseTimeout.current) {
-      window.clearTimeout(newChatConfirmCloseTimeout.current);
-    }
-    newChatConfirmCloseTimeout.current = window.setTimeout(() => {
-      setShowNewChatConfirm(false);
-      setIsNewChatConfirmClosing(false);
-      newChatConfirmCloseTimeout.current = null;
-    }, 180);
+    // No conversation or no messages - directly start new chat
     abortRequestedRef.current = true;
     abortControllerRef.current?.abort();
     resetConversation();
+  };
+  const closeFeedbackReminder = () => {
+    if (!showFeedbackReminder || isFeedbackReminderClosing) return;
+    setIsFeedbackReminderClosing(true);
+    if (feedbackReminderCloseTimeout.current) {
+      window.clearTimeout(feedbackReminderCloseTimeout.current);
+    }
+    feedbackReminderCloseTimeout.current = window.setTimeout(() => {
+      setShowFeedbackReminder(false);
+      setIsFeedbackReminderClosing(false);
+      feedbackReminderCloseTimeout.current = null;
+    }, 180);
+  };
+  const closeFeedbackReminderAndOpenFeedback = () => {
+    if (!showFeedbackReminder || isFeedbackReminderClosing) return;
+    setIsFeedbackReminderClosing(true);
+    if (feedbackReminderCloseTimeout.current) {
+      window.clearTimeout(feedbackReminderCloseTimeout.current);
+    }
+    feedbackReminderCloseTimeout.current = window.setTimeout(() => {
+      setShowFeedbackReminder(false);
+      setIsFeedbackReminderClosing(false);
+      feedbackReminderCloseTimeout.current = null;
+      // Open the feedback modal
+      setIsConversationFeedbackOpen(true);
+    }, 180);
+  };
+  const skipFeedbackAndStartNewChat = () => {
+    if (isFeedbackReminderClosing) return;
+    setIsFeedbackReminderClosing(true);
+    if (feedbackReminderCloseTimeout.current) {
+      window.clearTimeout(feedbackReminderCloseTimeout.current);
+    }
+    feedbackReminderCloseTimeout.current = window.setTimeout(() => {
+      setShowFeedbackReminder(false);
+      setIsFeedbackReminderClosing(false);
+      feedbackReminderCloseTimeout.current = null;
+      // Directly start new chat
+      abortRequestedRef.current = true;
+      abortControllerRef.current?.abort();
+      resetConversation();
+    }, 180);
   };
   const closeZendeskNotFound = () => {
     if (!zendeskNotFound || isZendeskNotFoundClosing) return;
@@ -1354,8 +1719,8 @@ export default function Home() {
       if (abortConfirmCloseTimeout.current) {
         window.clearTimeout(abortConfirmCloseTimeout.current);
       }
-      if (newChatConfirmCloseTimeout.current) {
-        window.clearTimeout(newChatConfirmCloseTimeout.current);
+      if (feedbackReminderCloseTimeout.current) {
+        window.clearTimeout(feedbackReminderCloseTimeout.current);
       }
       if (metaOverlayCloseTimeout.current) {
         window.clearTimeout(metaOverlayCloseTimeout.current);
@@ -1417,14 +1782,13 @@ export default function Home() {
     if (isChatRequest) {
       setSteps((prev) => ({ started: true, queryAnalysis: prev.queryAnalysis }));
       setIsChatOverlayVisible(true);
+      // Reset only UI state (collapse trace/sources panels) but preserve historical data
       setMessages((prev) =>
         prev.map((message) =>
           message.role === 'assistant'
             ? {
                 ...message,
-                sources: undefined,
-                trace: undefined,
-                timing: undefined,
+                // Keep sources, trace, timing - these are historical data
                 isTraceOpen: false,
                 isSourcesOpen: false,
                 collapsedTools: undefined
@@ -1701,6 +2065,7 @@ export default function Home() {
           isZendeskTicket: detectedIsZendeskTicket,
           agentInput: agentInputPayload ?? undefined,
           sessionId: sessionId || undefined,
+          conversationId: conversationId || undefined,
           attachments: isChatRequest
             ? attachments.map((attachment) => attachment.dataUrl)
             : undefined
@@ -2047,6 +2412,11 @@ export default function Home() {
           if (typeof data?.sessionId === 'string' && data.sessionId.trim()) {
             setSessionId(data.sessionId);
           }
+          if (typeof data?.conversationId === 'string' && data.conversationId.trim()) {
+            setConversationId(data.conversationId);
+            // Refresh conversations list to show the new conversation
+            fetchConversations();
+          }
           if (usageRecords.length > 0) {
             const totalCostUsd = usageRecords.reduce((sum, record) => {
               const value = typeof record.costUsd === 'number' ? record.costUsd : 0;
@@ -2059,11 +2429,13 @@ export default function Home() {
               return acc;
             }, {});
             const timestamp = new Date().toISOString();
+            const effectiveSessionId = (typeof data?.sessionId === 'string' && data.sessionId.trim()) ? data.sessionId : sessionId;
             const payload = {
               input: cleanInput,
               timestamp,
               totalCostUsd,
-              bySource
+              bySource,
+              sessionId: effectiveSessionId
             };
             console.log('[llm_usage][total]', payload);
             void fetch(costTrackerEndpoint, {
@@ -2148,6 +2520,7 @@ export default function Home() {
               const value = typeof record.costUsd === 'number' ? record.costUsd : 0;
               return sum + value;
             }, 0);
+            const finalConversationId = typeof data?.conversationId === 'string' ? data.conversationId : conversationId;
             const interactionPayload = {
               session_id: finalSessionId,
               user_input: cleanInput,
@@ -2159,7 +2532,8 @@ export default function Home() {
               timing_server_ms: serverMs,
               timing_roundtrip_ms: finalRoundTripMs,
               cost_usd: totalCostUsd > 0 ? totalCostUsd : undefined,
-              attachments_count: attachments.length
+              attachments_count: attachments.length,
+              conversation_id: finalConversationId || undefined
             };
             void fetch(agentInteractionsEndpoint, {
               method: 'POST',
@@ -2336,6 +2710,20 @@ export default function Home() {
 
   return (
     <div className="george-app">
+      <div className="george-main-with-sidebar">
+        <ConversationList
+          conversations={conversations}
+          activeConversationId={conversationId}
+          onSelectConversation={handleSelectConversation}
+          onSelectConversationById={handleSelectConversationById}
+          onNewChat={requestNewChat}
+          onDeleteConversation={handleDeleteConversation}
+          onRenameConversation={handleRenameConversation}
+          isLoading={conversationsLoading}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+        <div className="george-main-content">
       {/* Main Content */}
       {!hasResponse ? (
         <main className={`george-main${isReturningHome ? ' is-returning' : ''}`}>
@@ -2345,6 +2733,9 @@ export default function Home() {
                 <img src="/george-logo.png" alt="George Character" className="george-character" />
               </div>
               <div className="george-greeting">
+                {currentUserName && (
+                  <p className="george-greeting-name">Hey {currentUserName}</p>
+                )}
                 <h2 className="george-greeting-title">How may I assist you today?</h2>
                 <p className="george-greeting-text">
                   I'm George, your DxO support assistant. I speak fluent PhotoLab, PureRAW, and all matters of image excellence.
@@ -3063,7 +3454,7 @@ export default function Home() {
         ) : null}
         <section className="george-output">
           <div className={`george-chat${showTranscript ? ' is-visible' : ''}`}>
-              <div className="george-chat-transcript" ref={chatTranscriptRef}>
+              <div className={`george-chat-transcript${isLoadingConversation ? ' is-transitioning' : ''}`} ref={chatTranscriptRef}>
                 {messages.map((message, index) => {
                   const trace = message.trace;
                   const traceQueries = trace?.agentThinking?.queries ?? [];
@@ -3081,6 +3472,7 @@ export default function Home() {
                     <div
                       key={`${message.role}-${index}`}
                       className={`george-chat-message ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}
+                      style={{ animationDelay: `${Math.min(index * 0.03, 0.3)}s` }}
                     >
                       <div className="george-chat-avatar" aria-hidden="true">
                         {message.role === 'assistant' ? (
@@ -3326,14 +3718,20 @@ export default function Home() {
                 </div>
               ) : null}
             </div>
-            {showTranscript ? (
-              <div className="george-input-container">
-                <button type="button" className="george-new-chat" onClick={requestNewChat}>
-                  New chat
-                </button>
-              </div>
-            ) : null}
         </section>
+        {conversationId && messages.length > 0 ? (
+          <div className="george-conversation-feedback-container">
+            <ConversationFeedback
+              conversationId={conversationId}
+              currentRating={currentConversation?.feedback_rating ?? null}
+              currentComment={currentConversation?.feedback_comment ?? null}
+              isHighlighted={showConversationFeedbackHighlight}
+              isOpenExternal={isConversationFeedbackOpen}
+              onOpenChange={setIsConversationFeedbackOpen}
+              onSubmit={handleConversationFeedbackSubmit}
+            />
+          </div>
+        ) : null}
     </main>
       )}
       {metaOverlay && messages[metaOverlay.messageIndex] ? createPortal(
@@ -3420,7 +3818,19 @@ export default function Home() {
                         </div>
                         <div className="george-trace-tools">
                           {Object.entries(groupedTools).map(([label, group]) => {
+                            const isSqlTool = group.some((q) => isTableOutput(q.output));
                             const totalSources = group.reduce((sum, q) => sum + q.sources.length, 0);
+                            const uniqueRows = (() => {
+                              const seen = new Set<string>();
+                              for (const q of group) {
+                                if (isTableOutput(q.output)) {
+                                  for (const row of q.output.rows) {
+                                    seen.add(JSON.stringify(row));
+                                  }
+                                }
+                              }
+                              return seen.size;
+                            })();
                             const isCollapsed = message.collapsedTools?.[label] ?? false;
                             return (
                               <div key={label} className="george-trace-tool">
@@ -3431,7 +3841,7 @@ export default function Home() {
                                 >
                                   <span className="george-trace-tool-name">{label}</span>
                                   <span className="george-trace-tool-summary">
-                                    {group.length} call{group.length !== 1 ? 's' : ''} • {totalSources} source{totalSources !== 1 ? 's' : ''}
+                                    {group.length} call{group.length !== 1 ? 's' : ''} • {isSqlTool ? `${uniqueRows} row${uniqueRows !== 1 ? 's' : ''}` : `${totalSources} source${totalSources !== 1 ? 's' : ''}`}
                                   </span>
                                   <span className={`george-trace-tool-chevron${isCollapsed ? '' : ' is-open'}`} aria-hidden="true">⌄</span>
                                 </button>
@@ -3626,27 +4036,33 @@ export default function Home() {
         </div>,
         document.body
       ) : null}
-      {showNewChatConfirm ? createPortal(
+      {showFeedbackReminder ? createPortal(
         <div
-          className={`george-confirm-overlay${isNewChatConfirmClosing ? ' is-closing' : ''}`}
+          className={`george-confirm-overlay${isFeedbackReminderClosing ? ' is-closing' : ''}`}
           role="dialog"
           aria-modal="true"
-          onClick={cancelNewChat}
+          onClick={closeFeedbackReminder}
         >
           <div
-            className={`george-confirm-modal${isNewChatConfirmClosing ? ' is-closing' : ''}`}
+            className={`george-confirm-modal${isFeedbackReminderClosing ? ' is-closing' : ''}`}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="george-confirm-title">Start a new conversation?</div>
+            <div className="george-confirm-title">
+              {currentConversation?.feedback_rating ? 'Is your feedback still accurate?' : 'Rate this conversation'}
+            </div>
             <div className="george-confirm-body">
-              Are you sure you want to start a new conversation? This will delete this session.
+              {currentConversation?.feedback_rating ? (
+                <>You previously rated this conversation. Would you like to update your feedback before starting a new conversation?</>
+              ) : (
+                <>Please consider rating this conversation before starting a new one. Your feedback helps us improve.</>
+              )}
             </div>
             <div className="george-confirm-actions">
-              <button type="button" className="george-confirm-cancel" onClick={cancelNewChat}>
-                Cancel
+              <button type="button" className="george-confirm-cancel" onClick={skipFeedbackAndStartNewChat}>
+                Skip
               </button>
-              <button type="button" className="george-confirm-accept" onClick={confirmNewChat}>
-                Start new
+              <button type="button" className="george-confirm-accept" onClick={closeFeedbackReminderAndOpenFeedback}>
+                {currentConversation?.feedback_rating ? 'Update Feedback' : 'Rate Now'}
               </button>
             </div>
           </div>
@@ -3654,6 +4070,8 @@ export default function Home() {
         document.body
       ) : null}
 
+        </div>
+      </div>
     </div>
   );
 }

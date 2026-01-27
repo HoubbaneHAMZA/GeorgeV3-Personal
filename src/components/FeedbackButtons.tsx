@@ -49,6 +49,11 @@ export default function FeedbackButtons({
 }: FeedbackButtonsProps) {
   const [selectedRating, setSelectedRating] = useState<FeedbackRating | null>(currentRating ?? null);
   const [popoverRating, setPopoverRating] = useState<FeedbackRating | null>(null);
+
+  // Sync selectedRating when currentRating prop changes (e.g., when loading a conversation)
+  useEffect(() => {
+    setSelectedRating(currentRating ?? null);
+  }, [currentRating]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState<{

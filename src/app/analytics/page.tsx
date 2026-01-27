@@ -7,7 +7,9 @@ import AnalyticsOverview from '@/components/analytics/AnalyticsOverview';
 import AnalyticsTrends from '@/components/analytics/AnalyticsTrends';
 import AnalyticsTags from '@/components/analytics/AnalyticsTags';
 import AnalyticsFeedbackList from '@/components/analytics/AnalyticsFeedbackList';
-import { Download, Calendar, ChevronDown } from 'lucide-react';
+import { Download, Calendar, ChevronDown, User, Globe } from 'lucide-react';
+
+type AnalyticsScope = 'global' | 'personal';
 
 type DateRange = {
   from: string;
@@ -117,6 +119,7 @@ export default function AnalyticsPage() {
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [ratingFilter, setRatingFilter] = useState<string>('');
   const [page, setPage] = useState(1);
+  const [scope, setScope] = useState<AnalyticsScope>('global');
   const limit = 10;
 
   useEffect(() => {
@@ -140,7 +143,7 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [dateRange.from, dateRange.to, ratingFilter]);
+  }, [dateRange.from, dateRange.to, ratingFilter, scope]);
 
   const handleExport = useCallback(async (format: 'json' | 'csv') => {
     if (!accessToken) return;
@@ -149,6 +152,7 @@ export default function AnalyticsPage() {
     if (dateRange.from) params.set('from', dateRange.from);
     if (dateRange.to) params.set('to', dateRange.to);
     params.set('format', format);
+    params.set('scope', scope);
 
     try {
       const response = await fetch(`/api/feedback-analytics/export?${params}`, {
@@ -173,7 +177,7 @@ export default function AnalyticsPage() {
       console.error('Export error:', err);
     }
     setShowExportMenu(false);
-  }, [accessToken, dateRange]);
+  }, [accessToken, dateRange, scope]);
 
   useEffect(() => {
     const fetchBundle = async () => {
@@ -188,6 +192,7 @@ export default function AnalyticsPage() {
       if (ratingFilter) params.set('rating', ratingFilter);
       params.set('page', String(page));
       params.set('limit', String(limit));
+      params.set('scope', scope);
 
       try {
         const response = await fetch(`/api/feedback-analytics/bundle?${params}`, {
@@ -208,7 +213,7 @@ export default function AnalyticsPage() {
     };
 
     fetchBundle();
-  }, [accessToken, dateRange.from, dateRange.to, ratingFilter, page, limit]);
+  }, [accessToken, dateRange.from, dateRange.to, ratingFilter, page, limit, scope]);
 
   if (isLoading) {
     return (
@@ -223,6 +228,26 @@ export default function AnalyticsPage() {
           <div className="george-analytics-header">
             <h1 className="george-analytics-title">Analytics Dashboard</h1>
             <div className="george-analytics-actions">
+              {/* Scope Toggle */}
+              <div className="george-analytics-scope-toggle">
+                <button
+                  type="button"
+                  className={`george-analytics-scope-btn${scope === 'personal' ? ' is-active' : ''}`}
+                  onClick={() => setScope('personal')}
+                >
+                  <User size={14} />
+                  <span>My Analytics</span>
+                </button>
+                <button
+                  type="button"
+                  className={`george-analytics-scope-btn${scope === 'global' ? ' is-active' : ''}`}
+                  onClick={() => setScope('global')}
+                >
+                  <Globe size={14} />
+                  <span>Global</span>
+                </button>
+              </div>
+
               {/* Date Picker */}
               <div className="george-analytics-date-picker">
                 <button
