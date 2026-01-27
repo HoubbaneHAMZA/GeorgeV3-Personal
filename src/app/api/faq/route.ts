@@ -33,11 +33,10 @@ export async function GET() {
     console.log('[FAQ API] Using Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
     console.log('[FAQ API] Has service role key:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    // Fetch QAIs with qai_age='new'
+    // Fetch all QAIs
     const { data: qaiData, error: qaiError } = await supabase
       .from('dxo_qai_content_hashes')
       .select('doc_id, exact_content, cluster_id, faq_ids, ticket_ids, faq_count, ticket_count, created_at, applicable_combinations, qai_age')
-      .eq('qai_age', 'new')
       .order('created_at', { ascending: false })
       .limit(500);
 
