@@ -739,6 +739,12 @@ html, body {
   color: var(--page-bg);
 }
 
+.george-faq-flow-step.is-clustering .george-faq-flow-icon {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  border-color: #8b5cf6;
+  color: white;
+}
+
 .george-faq-flow-label {
   font-size: 13px;
   font-weight: 600;
