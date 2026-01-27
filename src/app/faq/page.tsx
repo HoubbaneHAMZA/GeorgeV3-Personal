@@ -725,7 +725,7 @@ export default function FaqPage() {
             <div className="george-faq-process-content">
               {/* Process Flow Diagram */}
               <div className="george-faq-flow">
-                {/* Step 1: Sources */}
+                {/* Step 1: Input */}
                 <div className="george-faq-flow-step">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -738,118 +738,84 @@ export default function FaqPage() {
                       <path d="M8 20H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Support Tickets</div>
-                  <div className="george-faq-flow-desc">Resolved customer conversations</div>
+                  <div className="george-faq-flow-label">Tickets</div>
+                  <div className="george-faq-flow-desc">Customer conversations</div>
                 </div>
 
                 <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
 
-                {/* Step 2: AI Analysis */}
-                <div className="george-faq-flow-step is-highlight">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <circle cx="16" cy="16" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                      <circle cx="16" cy="16" r="4" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M16 2V6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M16 26V30" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M2 16H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M26 16H30" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                  <div className="george-faq-flow-label">AI Analysis</div>
-                  <div className="george-faq-flow-desc">Understand each ticket&apos;s topic</div>
-                </div>
-
-                <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-
-                {/* Step 3: Group Similar - NEW CLUSTERING STEP */}
-                <div className="george-faq-flow-step is-clustering">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      {/* Three overlapping circles representing grouping */}
-                      <circle cx="12" cy="12" r="6" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                      <circle cx="20" cy="12" r="6" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                      <circle cx="16" cy="20" r="6" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                      {/* Center dot where they meet */}
-                      <circle cx="16" cy="14" r="2" fill="currentColor"/>
-                    </svg>
-                  </div>
-                  <div className="george-faq-flow-label">Group Similar</div>
-                  <div className="george-faq-flow-desc">Find tickets asking the same thing</div>
-                </div>
-
-                <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-
-                {/* Step 4: Merge into Answers - NEW COMBINING STEP */}
-                <div className="george-faq-flow-step is-clustering">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      {/* Multiple arrows converging into one document */}
-                      <path d="M6 8L14 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M6 24L14 16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M6 16H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      {/* Document on the right */}
-                      <rect x="18" y="8" width="10" height="16" rx="1" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M21 13H25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M21 17H25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M21 21H24" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                  <div className="george-faq-flow-label">Merge Answers</div>
-                  <div className="george-faq-flow-desc">Combine best solutions from each group</div>
-                </div>
-
-                <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-
-                {/* Step 5: Knowledge Base */}
+                {/* Step 2: Analyze */}
                 <div className="george-faq-flow-step">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <path d="M6 4H22L26 8V28H6V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M22 4V8H26" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M10 14H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M10 18H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M10 22H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <circle cx="16" cy="16" r="10" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M16 10V16L20 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Knowledge Base</div>
-                  <div className="george-faq-flow-desc">Existing support articles</div>
+                  <div className="george-faq-flow-label">Analyze</div>
+                  <div className="george-faq-flow-desc">AI reads each ticket</div>
                 </div>
 
                 <div className="george-faq-flow-connector">
-                  <svg width="40" height="24" viewBox="0 0 40 24" fill="none">
-                    <path d="M0 12H32M32 12L24 6M32 12L24 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
 
-                {/* Step 6: Output */}
+                {/* Step 3: Group Similar */}
+                <div className="george-faq-flow-step is-highlight">
+                  <div className="george-faq-flow-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                      <circle cx="10" cy="13" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                      <circle cx="22" cy="13" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                      <circle cx="16" cy="22" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                    </svg>
+                  </div>
+                  <div className="george-faq-flow-label">Group Similar</div>
+                  <div className="george-faq-flow-desc">Find related questions</div>
+                </div>
+
+                <div className="george-faq-flow-connector">
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+
+                {/* Step 4: Create Answers */}
+                <div className="george-faq-flow-step is-highlight">
+                  <div className="george-faq-flow-icon">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                      <path d="M8 8L16 16M8 24L16 16M24 16H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <circle cx="16" cy="16" r="3" fill="currentColor"/>
+                    </svg>
+                  </div>
+                  <div className="george-faq-flow-label">Merge</div>
+                  <div className="george-faq-flow-desc">Combine into one answer</div>
+                </div>
+
+                <div className="george-faq-flow-connector">
+                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+
+                {/* Step 5: Output */}
                 <div className="george-faq-flow-step is-result">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <path d="M16 4L28 10V22L16 28L4 22V10L16 4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M16 16L28 10" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M16 16L4 10" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M16 16V28" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M9 4H19L25 10V28H9V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                      <path d="M19 4V10H25" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                      <path d="M13 16H21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <path d="M13 20H21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <path d="M13 24H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Generated FAQs</div>
-                  <div className="george-faq-flow-desc">Ready for review</div>
+                  <div className="george-faq-flow-label">FAQ Ready</div>
+                  <div className="george-faq-flow-desc">Review & publish</div>
                 </div>
               </div>
 
