@@ -395,6 +395,10 @@ export default function FaqPage() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'new' | 'modified'>('new');
   const [showAllMetadata, setShowAllMetadata] = useState(false);
 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   // Advanced filters
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>('');
@@ -404,6 +408,23 @@ export default function FaqPage() {
   const [osVersionFilter, setOsVersionFilter] = useState<string>('');
   const [interventionTypeFilter, setInterventionTypeFilter] = useState<string>('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  // Back to top button visibility
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  // Track scroll position for back-to-top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Scroll to top function
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -690,6 +711,19 @@ export default function FaqPage() {
       modified: modifiedCount,
     };
   }, [qaiItems]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredItems.slice(startIndex, endIndex);
+  }, [filteredItems, currentPage, itemsPerPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, typeFilter, categoryFilter, subCategoryFilter, interventionTypeFilter, softwareFilter, softwareVersionFilter, osFilter, osVersionFilter]);
 
   const toggleExpand = (key: string) => {
     setExpandedIds((prev) => {
@@ -1289,8 +1323,9 @@ export default function FaqPage() {
         )}
 
         {!loading && !error && filteredItems.length > 0 && (
+          <>
           <section className="george-faq-list">
-            {filteredItems.map((item, idx) => {
+            {paginatedItems.map((item, idx) => {
               const key = item.doc_id || `qai-${idx}`;
               const isExpanded = expandedIds.has(key);
               const content = parseQAIContent(item.exact_content);
@@ -1603,6 +1638,108 @@ export default function FaqPage() {
               );
             })}
           </section>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <section className="george-faq-pagination">
+              <div className="george-faq-pagination-info">
+                Showing {((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, filteredItems.length)} of {filteredItems.length} FAQs
+              </div>
+              <div className="george-faq-pagination-controls">
+                <button
+                  type="button"
+                  className="george-faq-pagination-btn"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  aria-label="First page"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="11 17 6 12 11 7"/>
+                    <polyline points="18 17 13 12 18 7"/>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="george-faq-pagination-btn"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  aria-label="Previous page"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6"/>
+                  </svg>
+                </button>
+                
+                <div className="george-faq-pagination-pages">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(page => {
+                      // Show first, last, current, and pages around current
+                      if (page === 1 || page === totalPages) return true;
+                      if (Math.abs(page - currentPage) <= 1) return true;
+                      return false;
+                    })
+                    .map((page, index, array) => {
+                      // Add ellipsis if there's a gap
+                      const prevPage = array[index - 1];
+                      const showEllipsis = prevPage && page - prevPage > 1;
+                      
+                      return (
+                        <span key={page}>
+                          {showEllipsis && <span className="george-faq-pagination-ellipsis">…</span>}
+                          <button
+                            type="button"
+                            className={`george-faq-pagination-page ${currentPage === page ? 'is-active' : ''}`}
+                            onClick={() => setCurrentPage(page)}
+                          >
+                            {page}
+                          </button>
+                        </span>
+                      );
+                    })}
+                </div>
+
+                <button
+                  type="button"
+                  className="george-faq-pagination-btn"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  aria-label="Next page"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="george-faq-pagination-btn"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  aria-label="Last page"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="13 17 18 12 13 7"/>
+                    <polyline points="6 17 11 12 6 7"/>
+                  </svg>
+                </button>
+              </div>
+            </section>
+          )}
+          </>
+        )}
+
+        {/* Back to Top Button */}
+        {showBackToTop && (
+          <button
+            type="button"
+            className="george-faq-back-to-top"
+            onClick={scrollToTop}
+            aria-label="Back to top"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+            <span>Back to Top</span>
+          </button>
         )}
       </main>
     </div>
