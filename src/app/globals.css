@@ -244,11 +244,17 @@ html, body {
 }
 
 .george-docs {
-  --page-padding: 40px;
-  max-width: 900px;
+  --page-padding: 48px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 48px var(--page-padding) 80px;
   width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .george-docs {
+    --page-padding: 32px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -556,13 +562,6 @@ html, body {
 }
 
 /* FAQ Filters */
-.george-faq-filters {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
 .george-faq-filter-btn {
   display: inline-flex;
   align-items: center;
@@ -624,6 +623,87 @@ html, body {
 
 .george-faq-filter-btn.is-modified.is-active .george-faq-filter-count {
   background: rgba(31, 28, 24, 0.12);
+}
+
+/* Filter group layout */
+.george-faq-filter-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.george-faq-filters {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+/* Metadata toggle button */
+.george-faq-metadata-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-family: 'Geist Mono', 'Geist Mono Fallback', monospace;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--muted);
+}
+
+.george-faq-metadata-toggle:hover {
+  border-color: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.george-faq-metadata-toggle.is-active {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.george-faq-metadata-toggle svg {
+  opacity: 0.6;
+}
+
+.george-faq-metadata-toggle.is-active svg {
+  opacity: 1;
+}
+
+/* Toggle indicator (on/off pill) */
+.george-faq-toggle-indicator {
+  width: 32px;
+  height: 18px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.george-faq-toggle-indicator::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.george-faq-toggle-indicator.is-on {
+  background: var(--accent);
+}
+
+.george-faq-toggle-indicator.is-on::after {
+  transform: translateX(14px);
 }
 
 /* FAQ Process Section - Full-width with brand colors */
@@ -918,7 +998,13 @@ html, body {
 /* FAQ List - Apple-inspired Clean Design */
 .george-faq-list {
   display: grid;
-  gap: 12px;
+  gap: 16px;
+}
+
+@media (min-width: 1024px) {
+  .george-faq-list {
+    gap: 20px;
+  }
 }
 
 .george-faq-card {
@@ -945,11 +1031,17 @@ html, body {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 16px 20px;
+  padding: 18px 24px;
   border: none;
   background: none;
   cursor: pointer;
   text-align: left;
+}
+
+@media (min-width: 1024px) {
+  .george-faq-card-header {
+    padding: 20px 28px;
+  }
 }
 
 .george-faq-title-row {
@@ -1000,12 +1092,18 @@ html, body {
 
 /* Meta row */
 .george-faq-card-meta {
-  padding: 0 20px 16px;
+  padding: 0 24px 18px;
+}
+
+@media (min-width: 1024px) {
+  .george-faq-card-meta {
+    padding: 0 28px 20px;
+  }
 }
 
 .george-faq-meta-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
@@ -1014,36 +1112,28 @@ html, body {
 .george-faq-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .george-faq-pill {
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
   font-weight: 500;
   border: 1px solid var(--border);
-  background: var(--page-bg);
-  color: var(--muted);
-}
-
-/* Product pill - default */
-.george-faq-pill.product-pill {
-  background: var(--page-bg);
-  color: var(--muted);
-}
-
-/* OS-specific colors - subtle differentiation */
-.george-faq-pill.os-windows {
-  background: rgba(207, 92, 42, 0.06);
-  border-color: rgba(207, 92, 42, 0.2);
-  color: var(--accent);
-}
-
-.george-faq-pill.os-macos {
-  background: rgba(31, 28, 24, 0.04);
-  border-color: rgba(31, 28, 24, 0.15);
+  background: var(--card-bg);
   color: var(--text);
+  line-height: 1.3;
+}
+
+.george-faq-pill.product-pill {
+  background: linear-gradient(135deg, rgba(207, 92, 42, 0.04) 0%, rgba(207, 92, 42, 0.08) 100%);
+  border-color: rgba(207, 92, 42, 0.15);
 }
 
 .george-faq-info {
@@ -1086,6 +1176,12 @@ html, body {
   flex-direction: column;
   gap: 0;
   animation: faqFade 0.2s ease;
+}
+
+@media (min-width: 1024px) {
+  .george-faq-card-content {
+    padding: 28px 32px;
+  }
 }
 
 @keyframes faqFade {

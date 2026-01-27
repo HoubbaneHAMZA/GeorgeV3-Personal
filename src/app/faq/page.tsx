@@ -287,38 +287,52 @@ function formatVersions(versions: string[]): string {
   return `(${sorted.join(', ')})`;
 }
 
-// Group and deduplicate applicable combinations
+// Group and deduplicate applicable combinations - grouped by software
 interface GroupedCombination {
   software: string;
   softwareVersions: Set<string>;
-  os: string;
-  osVersions: Set<string>;
+  osMap: Map<string, Set<string>>; // OS name -> OS versions
 }
 
 function groupApplicableCombinations(combinations: MetadataItem[] | null): GroupedCombination[] {
   if (!combinations || combinations.length === 0) return [];
 
-  // Group by software + OS (normalized)
+  // Group by software only (combine all OS types with their versions)
   const groups = new Map<string, GroupedCombination>();
 
   for (const combo of combinations) {
     const software = getProductName(combo.software) || '';
     const os = getOSName(combo.os) || '';
 
-    if (!software && !os) continue;
+    if (!software) continue;
 
-    const key = `${software}|${os}`;
-
-    if (!groups.has(key)) {
-      groups.set(key, {
+    if (!groups.has(software)) {
+      groups.set(software, {
         software,
         softwareVersions: new Set(),
-        os,
-        osVersions: new Set(),
+        osMap: new Map(),
       });
     }
 
-    const group = groups.get(key)!;
+    const group = groups.get(software)!;
+
+    // Add OS and its versions
+    if (os) {
+      if (!group.osMap.has(os)) {
+        group.osMap.set(os, new Set());
+      }
+      const osVersions = group.osMap.get(os)!;
+      
+      // Add OS versions (handle both array and singular formats)
+      if (combo.os_versions) {
+        for (const v of combo.os_versions) {
+          if (v && v !== 'unspecified') osVersions.add(v);
+        }
+      }
+      if (combo.os_version && combo.os_version !== 'unspecified') {
+        osVersions.add(combo.os_version);
+      }
+    }
 
     // Add software versions (handle both array and singular formats)
     if (combo.software_versions) {
@@ -328,16 +342,6 @@ function groupApplicableCombinations(combinations: MetadataItem[] | null): Group
     }
     if (combo.software_version && combo.software_version !== 'unspecified') {
       group.softwareVersions.add(combo.software_version);
-    }
-
-    // Add OS versions (handle both array and singular formats)
-    if (combo.os_versions) {
-      for (const v of combo.os_versions) {
-        if (v && v !== 'unspecified') group.osVersions.add(v);
-      }
-    }
-    if (combo.os_version && combo.os_version !== 'unspecified') {
-      group.osVersions.add(combo.os_version);
     }
   }
 
@@ -354,30 +358,26 @@ function ProductBadges({ combinations }: { combinations: MetadataItem[] | null }
     <>
       {grouped.map((group, idx) => {
         const softwareVersions = formatVersions([...group.softwareVersions]);
-        const osVersions = formatVersions([...group.osVersions]);
+        
+        // Build OS string with versions: "Windows (10, 11), macOS (13, 14)"
+        const osEntries = [...group.osMap.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([osName, versions]) => {
+            const versionStr = formatVersions([...versions]);
+            return versionStr ? `${osName} ${versionStr}` : osName;
+          });
 
-        // Determine OS class
-        let osClass = 'product-pill';
-        if (group.os.toLowerCase().includes('windows')) {
-          osClass = 'os-windows';
-        } else if (group.os.toLowerCase().includes('mac')) {
-          osClass = 'os-macos';
+        // Build display string: "PhotoLab (6, 7, 8) • Windows (10, 11), macOS (13, 14)"
+        let display = group.software;
+        if (softwareVersions) {
+          display += ` ${softwareVersions}`;
         }
-
-        // Build display string
-        let display = '';
-        if (group.software) {
-          display += group.software;
-          if (softwareVersions) display += ` ${softwareVersions}`;
-        }
-        if (group.software && group.os) display += ' • ';
-        if (group.os) {
-          display += group.os;
-          if (osVersions) display += ` ${osVersions}`;
+        if (osEntries.length > 0) {
+          display += ` • ${osEntries.join(', ')}`;
         }
 
         return (
-          <span key={idx} className={`george-faq-pill ${osClass}`}>
+          <span key={idx} className="george-faq-pill product-pill">
             {display}
           </span>
         );
@@ -393,6 +393,7 @@ export default function FaqPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'new' | 'modified'>('new');
+  const [showMetadata, setShowMetadata] = useState(true);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -689,26 +690,43 @@ export default function FaqPage() {
         </section>
 
         <section className="george-faq-filters">
+          <div className="george-faq-filter-group">
+            <button
+              type="button"
+              className={`george-faq-filter-btn ${typeFilter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setTypeFilter('all')}
+            >
+              All <span className="george-faq-filter-count">{typeCounts.all}</span>
+            </button>
+            <button
+              type="button"
+              className={`george-faq-filter-btn is-new ${typeFilter === 'new' ? 'is-active' : ''}`}
+              onClick={() => setTypeFilter('new')}
+            >
+              New <span className="george-faq-filter-count">{typeCounts.new}</span>
+            </button>
+            <button
+              type="button"
+              className={`george-faq-filter-btn is-modified ${typeFilter === 'modified' ? 'is-active' : ''}`}
+              onClick={() => setTypeFilter('modified')}
+            >
+              Modified <span className="george-faq-filter-count">{typeCounts.modified}</span>
+            </button>
+          </div>
+
           <button
             type="button"
-            className={`george-faq-filter-btn ${typeFilter === 'all' ? 'is-active' : ''}`}
-            onClick={() => setTypeFilter('all')}
+            className={`george-faq-metadata-toggle ${showMetadata ? 'is-active' : ''}`}
+            onClick={() => setShowMetadata(!showMetadata)}
+            title={showMetadata ? 'Hide product & version info' : 'Show product & version info'}
           >
-            All <span className="george-faq-filter-count">{typeCounts.all}</span>
-          </button>
-          <button
-            type="button"
-            className={`george-faq-filter-btn is-new ${typeFilter === 'new' ? 'is-active' : ''}`}
-            onClick={() => setTypeFilter('new')}
-          >
-            New <span className="george-faq-filter-count">{typeCounts.new}</span>
-          </button>
-          <button
-            type="button"
-            className={`george-faq-filter-btn is-modified ${typeFilter === 'modified' ? 'is-active' : ''}`}
-            onClick={() => setTypeFilter('modified')}
-          >
-            Modified <span className="george-faq-filter-count">{typeCounts.modified}</span>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="1" y="3" width="14" height="2" rx="1" fill="currentColor"/>
+              <rect x="1" y="7" width="10" height="2" rx="1" fill="currentColor"/>
+              <rect x="1" y="11" width="6" height="2" rx="1" fill="currentColor"/>
+            </svg>
+            <span>Metadata</span>
+            <span className={`george-faq-toggle-indicator ${showMetadata ? 'is-on' : ''}`} />
           </button>
         </section>
 
@@ -896,9 +914,11 @@ export default function FaqPage() {
                   <div className="george-faq-card-meta">
                     <div className="george-faq-meta-row">
                       {/* Product pills */}
-                      <div className="george-faq-pills">
-                        <ProductBadges combinations={item.applicable_combinations} />
-                      </div>
+                      {showMetadata && (
+                        <div className="george-faq-pills">
+                          <ProductBadges combinations={item.applicable_combinations} />
+                        </div>
+                      )}
 
                       {/* Source counts and date */}
                       <div className="george-faq-info">
