@@ -39,6 +39,7 @@ export async function GET(request: Request) {
   const rating = searchParams.get('rating');
   const page = searchParams.get('page');
   const limit = searchParams.get('limit');
+  const scope = searchParams.get('scope');
 
   const queryParams = new URLSearchParams();
   if (from) queryParams.set('from', from);
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
   if (rating) queryParams.set('rating', rating);
   if (page) queryParams.set('page', page);
   if (limit) queryParams.set('limit', limit);
+  if (scope) queryParams.set('scope', scope);
 
   const url = `${SUPABASE_ENDPOINT}/bundle${queryParams.toString() ? `?${queryParams}` : ''}`;
 
@@ -55,7 +57,8 @@ export async function GET(request: Request) {
     headers: {
       'Content-Type': 'application/json',
       apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`
+      Authorization: `Bearer ${anonKey}`,
+      'x-user-id': authResult.userId
     }
   });
 

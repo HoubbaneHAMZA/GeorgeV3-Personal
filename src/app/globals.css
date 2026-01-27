@@ -4272,6 +4272,44 @@ html, body {
   align-items: center;
 }
 
+.george-analytics-scope-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--page-bg);
+}
+
+.george-analytics-scope-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.george-analytics-scope-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.george-analytics-scope-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.george-analytics-scope-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.george-analytics-scope-btn.is-active:hover {
+  background: var(--accent);
+}
+
 .george-analytics-date-picker,
 .george-analytics-export {
   position: relative;
@@ -4343,7 +4381,7 @@ html, body {
 
 .george-analytics-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
