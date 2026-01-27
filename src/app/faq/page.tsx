@@ -73,13 +73,8 @@ interface JobStatus {
   } | null;
 }
 
-// Edge function configuration
-const EDGE_FUNCTION_URL = 'https://oqwokjqdjybzoajpbqtq.supabase.co/functions/v1/qai-update';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-if (!SUPABASE_ANON_KEY) {
-  console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required for FAQ updates');
-}
+// API route for QAI updates (proxies to edge function)
+const QAI_UPDATE_API = '/api/qai-update';
 
 // Category and Sub-category mapping (normalized from production data)
 const CATEGORY_SUBCATEGORY_MAP: Record<string, string[]> = {
@@ -553,10 +548,9 @@ export default function FaqPage() {
 
     while (attempts < maxAttempts) {
       try {
-        const response = await fetch(`${EDGE_FUNCTION_URL}/status/${jobIdToPoll}`, {
+        const response = await fetch(`${QAI_UPDATE_API}?job_id=${jobIdToPoll}`, {
           headers: {
             'Authorization': `Bearer ${token}`,
-            'apikey': SUPABASE_ANON_KEY,
           },
         });
 
@@ -636,14 +630,13 @@ export default function FaqPage() {
       if (editForm.intervention_type.trim()) body.intervention_type = editForm.intervention_type;
       if (editForm.intervention_detail.trim()) body.intervention_detail = editForm.intervention_detail;
 
-      console.log('[FAQ] Calling edge function:', EDGE_FUNCTION_URL);
+      console.log('[FAQ] Calling QAI update API');
 
-      const response = await fetch(EDGE_FUNCTION_URL, {
+      const response = await fetch(QAI_UPDATE_API, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
-          'apikey': SUPABASE_ANON_KEY,
         },
         body: JSON.stringify(body),
       });
