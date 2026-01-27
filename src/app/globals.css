@@ -1101,12 +1101,83 @@ html, body {
   }
 }
 
+/* Category row - always visible */
+.george-faq-category-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.george-faq-category-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.12) 100%);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.george-faq-subcategory-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: rgba(107, 114, 128, 0.08);
+  color: #4b5563;
+  border: 1px solid rgba(107, 114, 128, 0.15);
+}
+
 .george-faq-meta-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
+}
+
+/* Per-card metadata toggle button */
+.george-faq-card-metadata-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--page-bg);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: inherit;
+}
+
+.george-faq-card-metadata-toggle:hover {
+  border-color: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--text);
+}
+
+.george-faq-card-metadata-toggle.is-active {
+  border-color: var(--accent, #cf5c2a);
+  background: rgba(207, 92, 42, 0.08);
+  color: var(--accent, #cf5c2a);
+}
+
+.george-faq-card-metadata-toggle svg {
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.george-faq-card-metadata-toggle.is-active svg {
+  opacity: 1;
 }
 
 .george-faq-pills {
@@ -1238,7 +1309,104 @@ html, body {
   letter-spacing: 0.01em;
 }
 
+/* Intervention section */
+.george-faq-intervention-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.04) 0%, rgba(245, 158, 11, 0.08) 100%);
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.george-faq-intervention-type,
+.george-faq-intervention-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.george-faq-intervention-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #b45309;
+}
+
+.george-faq-intervention-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.george-faq-intervention-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #78350f;
+  line-height: 1.5;
+}
+
+/* Card footer with metadata toggle and edit button */
+.george-faq-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+  gap: 16px;
+}
+
+@media (max-width: 480px) {
+  .george-faq-card-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .george-faq-card-footer .george-faq-edit-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* Note section */
+/* Metadata section (Category, Sub-category, Intervention Type) */
+.george-faq-metadata-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin-top: 24px;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.george-faq-metadata-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.george-faq-metadata-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted, #6b7280);
+}
+
+.george-faq-metadata-value {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text, #1d1d1f);
+}
+
 .george-faq-note {
   margin-top: 24px;
   padding-top: 20px;
