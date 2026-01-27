@@ -11,6 +11,10 @@ export type Conversation = {
   updated_at: string;
   is_archived: boolean;
   message_count: number;
+  feedback_rating: 'solved' | 'partially_solved' | 'not_solved' | null;
+  feedback_comment: string | null;
+  category: string | null;
+  sub_category: string | null;
 };
 
 type ConversationListProps = {

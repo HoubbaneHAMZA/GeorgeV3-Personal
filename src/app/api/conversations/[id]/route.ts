@@ -56,7 +56,7 @@ export async function GET(
   });
 }
 
-// PATCH /api/conversations/[id] - Update conversation (title, archive)
+// PATCH /api/conversations/[id] - Update conversation (title, archive, feedback)
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
