@@ -36,11 +36,13 @@ export async function GET(request: Request) {
   const from = searchParams.get('from');
   const to = searchParams.get('to');
   const format = searchParams.get('format') || 'json';
+  const scope = searchParams.get('scope');
 
   const queryParams = new URLSearchParams();
   if (from) queryParams.set('from', from);
   if (to) queryParams.set('to', to);
   queryParams.set('format', format);
+  if (scope) queryParams.set('scope', scope);
 
   const url = `${SUPABASE_ENDPOINT}/export${queryParams.toString() ? `?${queryParams}` : ''}`;
 
@@ -49,7 +51,8 @@ export async function GET(request: Request) {
     headers: {
       'Content-Type': 'application/json',
       apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`
+      Authorization: `Bearer ${anonKey}`,
+      'x-user-id': authResult.userId
     }
   });
 

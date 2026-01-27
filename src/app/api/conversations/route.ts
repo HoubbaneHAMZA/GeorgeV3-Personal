@@ -1,4 +1,4 @@
-const SUPABASE_ENDPOINT = 'https://oqwokjqdjybzoajpbqtq.supabase.co/functions/v1/agent-interactions';
+const SUPABASE_ENDPOINT = 'https://oqwokjqdjybzoajpbqtq.supabase.co/functions/v1/conversations';
 
 export const runtime = 'nodejs';
 
@@ -24,27 +24,33 @@ function getAnonKey(): string | Response {
   return anonKey;
 }
 
-// POST /api/agent-interactions - Create new interaction
-export async function POST(request: Request) {
+// GET /api/conversations - List user's conversations
+export async function GET(request: Request) {
   const authResult = await verifyAuth(request);
   if (authResult instanceof Response) return authResult;
 
   const anonKey = getAnonKey();
   if (anonKey instanceof Response) return anonKey;
 
-  const body = await request.json();
-  // Add user info from auth
-  body.user_id = authResult.userId;
-  body.user_email = authResult.userEmail;
+  const { searchParams } = new URL(request.url);
+  const limit = searchParams.get('limit') || '50';
+  const cursor = searchParams.get('cursor') || '';
+  const includeArchived = searchParams.get('include_archived') || 'false';
 
-  const response = await fetch(SUPABASE_ENDPOINT, {
-    method: 'POST',
+  const params = new URLSearchParams();
+  params.set('limit', limit);
+  if (cursor) params.set('cursor', cursor);
+  if (includeArchived === 'true') params.set('include_archived', 'true');
+
+  const response = await fetch(`${SUPABASE_ENDPOINT}?${params.toString()}`, {
+    method: 'GET',
     headers: {
       'Content-Type': 'application/json',
       apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`
-    },
-    body: JSON.stringify(body)
+      Authorization: `Bearer ${anonKey}`,
+      'x-user-id': authResult.userId,
+      'x-user-email': authResult.userEmail
+    }
   });
 
   const responseBody = await response.text();
@@ -56,46 +62,26 @@ export async function POST(request: Request) {
   });
 }
 
-// GET /api/agent-interactions?ids=id1,id2,id3 - Fetch feedback by IDs
-// GET /api/agent-interactions (no params) - Redirects to /tags for backwards compatibility
-export async function GET(request: Request) {
+// POST /api/conversations - Create new conversation
+export async function POST(request: Request) {
   const authResult = await verifyAuth(request);
   if (authResult instanceof Response) return authResult;
 
   const anonKey = getAnonKey();
   if (anonKey instanceof Response) return anonKey;
 
-  const { searchParams } = new URL(request.url);
-  const ids = searchParams.get('ids');
+  const body = await request.json();
 
-  // If ids provided, fetch feedback for those interactions
-  if (ids) {
-    const response = await fetch(`${SUPABASE_ENDPOINT}?ids=${ids}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`
-      }
-    });
-
-    const responseBody = await response.text();
-    return new Response(responseBody, {
-      status: response.status,
-      headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'application/json; charset=utf-8'
-      }
-    });
-  }
-
-  // Default: fetch tags (backwards compatibility)
-  const response = await fetch(`${SUPABASE_ENDPOINT}/tags`, {
-    method: 'GET',
+  const response = await fetch(SUPABASE_ENDPOINT, {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`
-    }
+      Authorization: `Bearer ${anonKey}`,
+      'x-user-id': authResult.userId,
+      'x-user-email': authResult.userEmail
+    },
+    body: JSON.stringify(body)
   });
 
   const responseBody = await response.text();

@@ -785,7 +785,7 @@ export default function FaqPage() {
                 </div>
 
                 {/* Step 3: Group Similar */}
-                <div className="george-faq-flow-step">
+                <div className="george-faq-flow-step is-highlight">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
                       <circle cx="10" cy="13" r="5" stroke="currentColor" strokeWidth="1.5"/>
@@ -803,8 +803,8 @@ export default function FaqPage() {
                   </svg>
                 </div>
 
-                {/* Step 4: Merge */}
-                <div className="george-faq-flow-step">
+                {/* Step 4: Create Answers */}
+                <div className="george-faq-flow-step is-highlight">
                   <div className="george-faq-flow-icon">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
                       <path d="M8 8L16 16M8 24L16 16M24 16H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
