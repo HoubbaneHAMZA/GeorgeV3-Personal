@@ -40,6 +40,7 @@ export async function GET(request: Request) {
   const page = searchParams.get('page');
   const limit = searchParams.get('limit');
   const scope = searchParams.get('scope');
+  const view = searchParams.get('view');
 
   const queryParams = new URLSearchParams();
   if (from) queryParams.set('from', from);
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
   if (page) queryParams.set('page', page);
   if (limit) queryParams.set('limit', limit);
   if (scope) queryParams.set('scope', scope);
+  if (view) queryParams.set('view', view);
 
   const url = `${SUPABASE_ENDPOINT}/bundle${queryParams.toString() ? `?${queryParams}` : ''}`;
 
