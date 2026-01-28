@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Search } from 'lucide-react';
 import type { FeedbackRating } from './FeedbackButtons';
 
 type FeedbackPopoverProps = {
@@ -38,6 +38,7 @@ export default function FeedbackPopover({
   const [otherTagValue, setOtherTagValue] = useState('');
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [comment, setComment] = useState('');
+  const [tagSearch, setTagSearch] = useState('');
   const popoverRef = useRef<HTMLDivElement>(null);
   const isUnusableRating = rating === 'unusable';
   const isProblematicRating = rating === 'problematic';
@@ -159,57 +160,83 @@ export default function FeedbackPopover({
 
       <div className="george-feedback-popover-content">
         {showTags && (
-          <div className="george-feedback-tags">
-            {isLoadingTags && <span className="george-feedback-tags-loading">Loading tags...</span>}
-            {!isLoadingTags && (
-              <>
-                {availableTags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={`george-feedback-tag${tags.includes(tag) ? ' is-selected' : ''}`}
-                    onClick={() => toggleTag(tag)}
-                  >
-                    {tag}
-                  </button>
-                ))}
-                {customTags.map((tag) => (
-                  <button
-                    key={`custom-${tag}`}
-                    type="button"
-                    className="george-feedback-tag is-selected"
-                    onClick={() => removeCustomTag(tag)}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </>
+          <>
+            {!isLoadingTags && availableTags.length > 6 && (
+              <div className="george-feedback-tag-search">
+                <Search size={14} className="george-feedback-tag-search-icon" />
+                <input
+                  type="text"
+                  placeholder="Search tags..."
+                  value={tagSearch}
+                  onChange={(e) => setTagSearch(e.target.value)}
+                  className="george-feedback-tag-search-input"
+                />
+              </div>
             )}
-            {allowOther && !showOtherInput ? (
-              <button
-                type="button"
-                className="george-feedback-tag george-feedback-tag-other"
-                onClick={handleOtherClick}
-              >
-                Other...
-              </button>
-            ) : allowOther && showOtherInput ? (
-              <input
-                type="text"
-                className="george-feedback-other-input"
-                placeholder="Type your feedback..."
-                value={otherTagValue}
-                onChange={(e) => setOtherTagValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addCustomTag();
-                  }
-                }}
-                autoFocus
-              />
-            ) : null}
-          </div>
+            <div className="george-feedback-tags">
+              {isLoadingTags && (
+                <>
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <span key={i} className="george-feedback-tag-skeleton" style={{ width: `${60 + (i % 3) * 40}px` }} />
+                  ))}
+                </>
+              )}
+              {!isLoadingTags && (
+                <div className="george-feedback-tags-loaded">
+                  {availableTags
+                    .filter((tag) => tag.toLowerCase().includes(tagSearch.toLowerCase()))
+                    .map((tag, index) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className={`george-feedback-tag${tags.includes(tag) ? ' is-selected' : ''}`}
+                        onClick={() => toggleTag(tag)}
+                        style={{ animationDelay: `${index * 30}ms` }}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  {customTags
+                    .filter((tag) => tag.toLowerCase().includes(tagSearch.toLowerCase()))
+                    .map((tag, index) => (
+                      <button
+                        key={`custom-${tag}`}
+                        type="button"
+                        className="george-feedback-tag is-selected"
+                        onClick={() => removeCustomTag(tag)}
+                        style={{ animationDelay: `${(availableTags.length + index) * 30}ms` }}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                </div>
+              )}
+              {allowOther && !showOtherInput ? (
+                <button
+                  type="button"
+                  className="george-feedback-tag george-feedback-tag-other"
+                  onClick={handleOtherClick}
+                >
+                  Other...
+                </button>
+              ) : allowOther && showOtherInput ? (
+                <input
+                  type="text"
+                  className="george-feedback-other-input"
+                  placeholder="Type your feedback..."
+                  value={otherTagValue}
+                  onChange={(e) => setOtherTagValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCustomTag();
+                    }
+                  }}
+                  autoFocus
+                />
+              ) : null}
+            </div>
+          </>
         )}
 
         <div className="george-feedback-comment">

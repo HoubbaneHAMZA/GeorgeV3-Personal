@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, BrainCircuit } from 'lucide-react';
 import { useDocsSnapshots } from '@/hooks/useDocsSnapshots';
 
 const dataSources = [
@@ -101,7 +101,7 @@ export default function DocsPage() {
     <div className="george-app">
       <main className="george-docs">
         <section className="george-docs-hero">
-          <img src="/george-logo.png" alt="George" className="george-docs-hero-logo" />
+          <BrainCircuit size={48} className="george-docs-hero-icon" />
           <div>
             <h2>How George Works</h2>
             <p>

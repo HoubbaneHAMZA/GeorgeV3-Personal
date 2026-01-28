@@ -267,7 +267,7 @@ html, body {
 
 .george-docs {
   --page-padding: 48px;
-  max-width: 1400px;
+  max-width: 1300px;
   margin: 0 auto;
   padding: 48px var(--page-padding) 80px;
   width: 100%;
@@ -297,6 +297,13 @@ html, body {
   width: 80px;
   height: 80px;
   object-fit: contain;
+}
+
+.george-docs-hero-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .george-docs-hero h2 {
@@ -1375,6 +1382,28 @@ html, body {
   gap: 16px;
 }
 
+.george-faq-list-page {
+  animation: faqPageFade 0.2s ease;
+  transform-origin: top center;
+}
+
+@keyframes faqPageFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .george-faq-list-page {
+    animation: none;
+  }
+}
+
 @media (min-width: 1024px) {
   .george-faq-list {
     gap: 20px;
@@ -1436,6 +1465,25 @@ html, body {
   display: flex;
   align-items: center;
   gap: 4px;
+  position: relative;
+}
+
+.george-faq-pagination-pages > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.george-faq-pagination-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  box-shadow: 0 6px 14px rgba(207, 92, 42, 0.2);
+  transform: translateX(0);
+  transition: transform 0.22s ease, width 0.22s ease;
+  z-index: 0;
 }
 
 .george-faq-pagination-page {
@@ -1449,11 +1497,13 @@ html, body {
   background: transparent;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.18s ease;
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--muted);
   font-family: 'Outfit', system-ui, sans-serif;
+  position: relative;
+  z-index: 1;
 }
 
 .george-faq-pagination-page:hover {
@@ -1462,15 +1512,18 @@ html, body {
 }
 
 .george-faq-pagination-page.is-active {
-  background: var(--accent);
   color: #fff;
-  border-color: var(--accent);
 }
 
 .george-faq-pagination-ellipsis {
-  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
   color: var(--muted);
   font-size: 0.9rem;
+  letter-spacing: 1px;
 }
 
 @media (max-width: 600px) {
@@ -3701,24 +3754,21 @@ html, body {
 }
 
 .george-chat-meta {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: static;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  margin-top: 10px;
   padding: 0 6px;
-  min-height: 24px;
 }
 
 .george-chat-message.is-assistant .george-chat-meta {
-  left: 44px;
+  margin-left: 44px;
 }
 
 .george-chat-message.is-user .george-chat-meta {
-  right: 44px;
+  margin-right: 44px;
 }
 
 
@@ -4059,9 +4109,10 @@ html, body {
   inset: 0;
   z-index: 5;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 24px;
+  padding-top: 60px;
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(6px);
   pointer-events: all;
@@ -4071,7 +4122,7 @@ html, body {
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
-  height: 520px;
+  min-height: 520px;
   justify-content: flex-start;
   padding-top: 28px;
 }
@@ -5064,8 +5115,13 @@ html, body {
 .george-feedback-floating-btn {
   position: fixed;
   z-index: 1001;
-  background: var(--page-bg);
+  background: transparent;
   cursor: default;
+  /* Ensure exact same size as original button */
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
 }
 
 .george-feedback-floating-popover {
@@ -5099,6 +5155,11 @@ html, body {
   position: relative;
 }
 
+.george-feedback-btn-wrapper:hover,
+.george-feedback-btn-wrapper:focus-within {
+  z-index: 100;
+}
+
 .george-feedback-tooltip {
   position: absolute;
   top: calc(100% + 4px);
@@ -5114,7 +5175,8 @@ html, body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 10;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .george-feedback-btn-wrapper:hover .george-feedback-tooltip,
@@ -5126,6 +5188,7 @@ html, body {
 .george-feedback-btn.is-hidden {
   opacity: 0;
   pointer-events: none;
+  transition: none; /* Instant hide so floating button replaces it seamlessly */
 }
 
 .george-feedback-btn {
@@ -5189,6 +5252,7 @@ html, body {
 .george-feedback-popover {
   width: 360px;
   max-width: calc(100vw - 96px);
+  max-height: min(500px, calc(100vh - 200px));
   background: var(--page-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -5269,6 +5333,42 @@ html, body {
   margin: 0;
 }
 
+/* Feedback Tag Search */
+.george-feedback-tag-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.15s ease;
+}
+
+.george-feedback-tag-search:focus-within {
+  border-color: var(--accent);
+}
+
+.george-feedback-tag-search-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.george-feedback-tag-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 0.8rem;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+}
+
+.george-feedback-tag-search-input::placeholder {
+  color: var(--muted);
+}
+
 /* Feedback Tags */
 .george-feedback-tags {
   display: flex;
@@ -5305,6 +5405,41 @@ html, body {
 .george-feedback-tag-other {
   font-style: italic;
   color: var(--muted);
+}
+
+.george-feedback-tag-skeleton {
+  display: inline-block;
+  height: 32px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.06) 25%, rgba(0, 0, 0, 0.1) 50%, rgba(0, 0, 0, 0.06) 75%);
+  background-size: 200% 100%;
+  border-radius: 16px;
+  animation: skeletonShimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.george-feedback-tags-loaded {
+  display: contents;
+}
+
+.george-feedback-tags-loaded .george-feedback-tag {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: tagFadeIn 0.25s ease forwards;
+}
+
+@keyframes tagFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .george-feedback-other-input {
@@ -5430,7 +5565,7 @@ html, body {
 .george-analytics {
   max-width: 1300px;
   margin: 0 auto;
-  padding: 32px 40px 80px;
+  padding: 48px 48px 80px;
   width: 100%;
 }
 
@@ -5883,6 +6018,7 @@ html, body {
 }
 
 /* Tags */
+/* Tags (Message View) - uses shared chart styles */
 .george-analytics-tags {
   padding: 20px;
   border: 1px solid var(--border);
@@ -5890,232 +6026,12 @@ html, body {
   background: var(--page-bg);
 }
 
-.george-analytics-tags-loading {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.george-analytics-tag-skeleton {
-  height: 40px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 8px;
-}
-
-.george-analytics-tags-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.george-analytics-tag-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.george-analytics-tag-rank {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.george-analytics-tag-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.george-analytics-tag-name {
-  font-size: 0.85rem;
-  color: var(--text);
-  margin-bottom: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.george-analytics-tag-bar-wrapper {
-  height: 4px;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.george-analytics-tag-bar {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 999px;
-  transition: width 0.3s ease;
-}
-
-.george-analytics-tag-bar-stacked {
-  height: 100%;
-  display: flex;
-  border-radius: 999px;
-  overflow: hidden;
-  transition: width 0.3s ease;
-}
-
-.george-analytics-tag-bar-unusable {
-  height: 100%;
-  background: #e57373;
-  transition: width 0.3s ease;
-}
-
-.george-analytics-tag-bar-problematic {
-  height: 100%;
-  background: #ffb74d;
-  transition: width 0.3s ease;
-}
-
-.george-analytics-tag-breakdown {
-  display: flex;
-  gap: 12px;
-  margin-top: 4px;
-  font-size: 0.7rem;
-}
-
-.george-analytics-tag-unusable {
-  color: #c62828;
-}
-
-.george-analytics-tag-problematic {
-  color: #ef6c00;
-}
-
-.george-analytics-tag-count {
-  width: 40px;
-  text-align: right;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* Categories (Conversation View) */
+/* Categories (Conversation View) - uses shared chart styles */
 .george-analytics-categories {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--page-bg);
-}
-
-.george-analytics-categories-loading {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.george-analytics-category-skeleton {
-  height: 48px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 6px;
-}
-
-.george-analytics-categories-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.george-analytics-category-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.george-analytics-category-rank {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.04);
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.george-analytics-category-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.george-analytics-category-name {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--text);
-  margin-bottom: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.george-analytics-category-bar-wrapper {
-  height: 6px;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 999px;
-  overflow: hidden;
-  margin-bottom: 4px;
-}
-
-.george-analytics-category-bar-stacked {
-  height: 100%;
-  display: flex;
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.george-analytics-category-bar-solved {
-  height: 100%;
-  background: #22c55e;
-}
-
-.george-analytics-category-bar-partial {
-  height: 100%;
-  background: #eab308;
-}
-
-.george-analytics-category-bar-not-solved {
-  height: 100%;
-  background: #ef4444;
-}
-
-.george-analytics-category-breakdown {
-  display: flex;
-  gap: 12px;
-  font-size: 0.7rem;
-}
-
-.george-analytics-category-solved {
-  color: #22c55e;
-}
-
-.george-analytics-category-partial {
-  color: #eab308;
-}
-
-.george-analytics-category-not-solved {
-  color: #ef4444;
-}
-
-.george-analytics-category-count {
-  width: 40px;
-  text-align: right;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text);
 }
 
 /* Feedback List */

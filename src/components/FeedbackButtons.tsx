@@ -58,6 +58,7 @@ export default function FeedbackButtons({
   const [isClosing, setIsClosing] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState<{
     buttonTop: number;
+    buttonLeft: number;
     buttonRight: number;
     popoverTop: number;
     openDirection: 'up' | 'down';
@@ -76,13 +77,12 @@ export default function FeedbackButtons({
 
   const handleRatingClick = (rating: FeedbackRating) => {
     if (!interactionId) return;
-    setSelectedRating(rating);
-    setPopoverRating(rating);
-
+    // Capture button position BEFORE setting popoverRating (which hides the button)
     const btn = buttonRefs.current[rating];
     if (btn) {
       const rect = btn.getBoundingClientRect();
       const buttonTop = rect.top;
+      const buttonLeft = rect.left;
       const buttonRight = window.innerWidth - rect.right;
 
       // Calculate available space above and below the button
@@ -104,7 +104,9 @@ export default function FeedbackButtons({
         popoverTop = buttonTop + BUTTON_HEIGHT;
       }
 
-      setPopoverPosition({ buttonTop, buttonRight, popoverTop, openDirection, maxHeight });
+      // Set position first, then rating in same tick to avoid layout shift
+      setPopoverPosition({ buttonTop, buttonLeft, buttonRight, popoverTop, openDirection, maxHeight });
+      setPopoverRating(rating);
     }
   };
 
@@ -211,11 +213,11 @@ export default function FeedbackButtons({
       {popoverRating !== null && popoverPosition && mounted && createPortal(
         <>
           <div className={`george-feedback-overlay${isClosing ? ' is-closing' : ''}`} onClick={handlePopoverClose} />
-          {/* Button positioned at original location */}
+          {/* Button positioned at original location using left for accuracy */}
           <button
             type="button"
             className="george-feedback-btn is-selected george-feedback-floating-btn"
-            style={{ top: popoverPosition.buttonTop, right: popoverPosition.buttonRight }}
+            style={{ top: popoverPosition.buttonTop, left: popoverPosition.buttonLeft }}
             aria-label={activeConfig?.label}
           >
             {activeConfig && (

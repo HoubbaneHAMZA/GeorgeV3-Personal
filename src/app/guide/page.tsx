@@ -1,11 +1,13 @@
 'use client';
 
+import { BookOpen } from 'lucide-react';
+
 export default function GuidePage() {
   return (
     <div className="george-app">
       <main className="george-docs george-guide">
         <section className="george-docs-hero">
-          <img src="/george-logo.png" alt="George" className="george-docs-hero-logo" />
+          <BookOpen size={48} className="george-docs-hero-icon" />
           <div>
             <h2>How to Use George</h2>
             <p>
