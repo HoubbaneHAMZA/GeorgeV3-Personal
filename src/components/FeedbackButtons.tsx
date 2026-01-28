@@ -8,11 +8,13 @@ import FeedbackPopover from './FeedbackPopover';
 
 export type FeedbackRating = 'unusable' | 'problematic' | 'usable' | 'good' | 'perfect';
 
+type SourceItem = { doc_id: string; url: string };
+
 type MessageData = {
   sessionId: string;
   userInput: string;
   responseContent: string;
-  responseSources?: string[];
+  responseSources?: SourceItem[];
   traceData?: unknown;
   timingServerMs?: number;
   attachmentsCount?: number;
