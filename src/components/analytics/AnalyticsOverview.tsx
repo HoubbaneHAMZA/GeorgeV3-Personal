@@ -109,7 +109,7 @@ export default function AnalyticsOverview({ data, isLoading, error, view = 'mess
       {
         icon: MessagesSquare,
         label: 'Avg Exchanges',
-        value: (convData.avg_exchanges ?? 0).toFixed(1),
+        value: `~${Math.round(convData.avg_exchanges ?? 0)}`,
         subtext: 'messages/conv'
       }
     ];
