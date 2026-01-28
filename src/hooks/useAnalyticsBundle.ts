@@ -4,6 +4,7 @@ import useSWR from 'swr';
 
 type AnalyticsView = 'message' | 'conversation';
 type AnalyticsScope = 'global' | 'personal';
+type MetricType = 'usage' | 'feedback';
 
 // Message view types
 type MessageOverviewData = {
@@ -108,7 +109,24 @@ type ConversationAnalyticsBundle = {
   };
 };
 
-export type AnalyticsBundle = MessageAnalyticsBundle | ConversationAnalyticsBundle;
+// Cost trend data for usage charts
+export type CostTrendData = {
+  date: string;
+  total_cost: number;
+  total_runs?: number;
+  total_conversations?: number;
+};
+
+// Extended bundle type that includes cost trends
+type MessageAnalyticsBundleWithCost = MessageAnalyticsBundle & {
+  costTrends?: CostTrendData[];
+};
+
+type ConversationAnalyticsBundleWithCost = ConversationAnalyticsBundle & {
+  costTrends?: CostTrendData[];
+};
+
+export type AnalyticsBundle = MessageAnalyticsBundleWithCost | ConversationAnalyticsBundleWithCost;
 
 export function isConversationBundle(bundle: AnalyticsBundle): bundle is ConversationAnalyticsBundle {
   return 'categories' in bundle;
@@ -120,6 +138,7 @@ type UseAnalyticsBundleParams = {
   to: string;
   view: AnalyticsView;
   scope: AnalyticsScope;
+  metricType: MetricType;
   ratingFilter: string;
   page: number;
   limit: number;
@@ -141,6 +160,7 @@ export function useAnalyticsBundle({
   to,
   view,
   scope,
+  metricType,
   ratingFilter,
   page,
   limit
@@ -155,6 +175,7 @@ export function useAnalyticsBundle({
   params.set('limit', String(limit));
   params.set('scope', scope);
   params.set('view', view);
+  params.set('metric', metricType);
 
   const url = `/api/feedback-analytics/bundle?${params}`;
 

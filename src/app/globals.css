@@ -6201,6 +6201,51 @@ html, body {
   background: var(--accent);
 }
 
+.george-analytics-view-btn.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Metric Toggle (Usage / Feedback) */
+.george-analytics-metric-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--page-bg);
+}
+
+.george-analytics-metric-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.george-analytics-metric-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.george-analytics-metric-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.george-analytics-metric-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.george-analytics-metric-btn.is-active:hover {
+  background: var(--accent);
+}
+
 .george-analytics-date-picker,
 .george-analytics-export {
   position: relative;
