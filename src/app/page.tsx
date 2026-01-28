@@ -767,17 +767,20 @@ export default function Home() {
     setIsDragActive(false);
     setRemovingAttachmentIds(new Set());
   }, [isTicketMode, attachments.length]);
-  const toolTags = useMemo(() => (
-    Array.from(
-      new Set(
-        steps.agentThinking?.queries.map((q) =>
-          q.tool.startsWith('vector_store_search_')
-            ? q.tool.replace('vector_store_search_', '')
-            : q.tool.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-        ) || []
-      )
-    )
-  ), [steps.agentThinking?.queries]);
+  const toolTagsWithCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const q of steps.agentThinking?.queries || []) {
+      const label = q.tool.startsWith('vector_store_search_')
+        ? q.tool.replace('vector_store_search_', '')
+        : q.tool.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      counts.set(label, (counts.get(label) || 0) + 1);
+    }
+    const result = Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
+    if (result.length > 0) {
+      console.log('[toolTagsWithCount]', result);
+    }
+    return result;
+  }, [steps.agentThinking?.queries]);
   const softwareOptions = useMemo(() => ([
     'filmpack',
     'nikcollection',
@@ -1486,7 +1489,7 @@ export default function Home() {
       toolTagPositionsRef.current = [];
       return;
     }
-    if (toolTags.length === 0) {
+    if (toolTagsWithCount.length === 0) {
       setArrowPaths([]);
       setToolTagPositions([]);
       toolTagPositionsRef.current = [];
@@ -1504,17 +1507,17 @@ export default function Home() {
     const baseRadius = 200;
     const ringGap = 80;
     // Calculate how many rings we need and ensure height accommodates them
-    const ringCount = Math.ceil(toolTags.length / maxPerRing);
+    const ringCount = Math.ceil(toolTagsWithCount.length / maxPerRing);
     const neededHeight = baseRadius + (ringCount - 1) * ringGap + 60;
     const height = Math.max(containerRect.height, neededHeight, 260);
     setToolsContainerHeight(Math.max(neededHeight, 260));
     const startAngle = Math.PI * 0.85;
     const endAngle = Math.PI * 0.15;
 
-    const nextPositions = toolTags.map((label, index) => {
+    const nextPositions = toolTagsWithCount.map((_, index) => {
       const ringIndex = Math.floor(index / maxPerRing);
       const ringStart = ringIndex * maxPerRing;
-      const itemsInRing = Math.min(maxPerRing, toolTags.length - ringStart);
+      const itemsInRing = Math.min(maxPerRing, toolTagsWithCount.length - ringStart);
       const positionIndex = index - ringStart;
       const angle =
         itemsInRing === 1
@@ -1596,7 +1599,7 @@ export default function Home() {
         toolLayoutAnimRef.current = null;
       }
     };
-  }, [toolTags, statusSteps.length, activeStatusId]);
+  }, [toolTagsWithCount, statusSteps.length, activeStatusId]);
 
   useEffect(() => {
     if (!loading || !showTranscript) return;
@@ -3631,10 +3634,10 @@ export default function Home() {
                         </div>
                       );
                     })}
-                    {steps.agentThinking && toolTags.length > 0 ? (
+                    {steps.agentThinking && toolTagsWithCount.length > 0 ? (
                       <div className="george-thinking-branches" ref={branchesRef}>
                         <svg className="george-thinking-arrows" aria-hidden="true">
-                          {toolTags.map((label, index) => (
+                          {toolTagsWithCount.map(({ label }, index) => (
                             <path
                               key={`arrow-${label}`}
                               d={arrowPaths[index] || ''}
@@ -3643,7 +3646,7 @@ export default function Home() {
                           ))}
                         </svg>
                         <div className="george-thinking-tools" aria-label="Active tools" style={{ minHeight: `${toolsContainerHeight}px` }}>
-                          {toolTags.map((label, index) => (
+                          {toolTagsWithCount.map(({ label, count }, index) => (
                             <div
                               key={label}
                               className="george-thinking-tool"
@@ -3654,6 +3657,11 @@ export default function Home() {
                               }}
                             >
                               {label}
+                              {count > 1 && (
+                                <span key={count} className="george-thinking-tool-count">
+                                  {count}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -3899,10 +3907,10 @@ export default function Home() {
                           </div>
                         );
                       })}
-                      {steps.agentThinking && toolTags.length > 0 ? (
+                      {steps.agentThinking && toolTagsWithCount.length > 0 ? (
                         <div className="george-thinking-branches" ref={branchesRef}>
                           <svg className="george-thinking-arrows" aria-hidden="true">
-                            {toolTags.map((label, index) => (
+                            {toolTagsWithCount.map(({ label }, index) => (
                               <path
                                 key={`overlay-arrow-${label}`}
                                 d={arrowPaths[index] || ''}
@@ -3911,7 +3919,7 @@ export default function Home() {
                             ))}
                           </svg>
                           <div className="george-thinking-tools" aria-label="Active tools" style={{ minHeight: `${toolsContainerHeight}px` }}>
-                            {toolTags.map((label, index) => (
+                            {toolTagsWithCount.map(({ label, count }, index) => (
                               <div
                                 key={`overlay-tool-${label}`}
                                 className="george-thinking-tool"
@@ -3922,6 +3930,11 @@ export default function Home() {
                                 }}
                               >
                                 {label}
+                                {count > 1 && (
+                                  <span key={count} className="george-thinking-tool-count">
+                                    {count}
+                                  </span>
+                                )}
                               </div>
                             ))}
                           </div>
