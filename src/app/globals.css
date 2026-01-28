@@ -4586,6 +4586,33 @@ html, body {
   animation: georgeToolIn 0.45s ease forwards;
   z-index: 1;
   will-change: transform, opacity;
+  overflow: visible;
+}
+
+.george-thinking-tool-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: white;
+  background: #2563eb;
+  border: 2px solid #e5edff;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  animation: georgeCountPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes georgeCountPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .george-thinking-anchor {
