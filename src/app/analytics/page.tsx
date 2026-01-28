@@ -7,7 +7,7 @@ import AnalyticsTrends from '@/components/analytics/AnalyticsTrends';
 import AnalyticsTags from '@/components/analytics/AnalyticsTags';
 import AnalyticsCategories from '@/components/analytics/AnalyticsCategories';
 import AnalyticsFeedbackList from '@/components/analytics/AnalyticsFeedbackList';
-import { Download, Calendar, ChevronDown, User, Globe, MessageSquare, MessagesSquare, RefreshCw } from 'lucide-react';
+import { Download, Calendar, ChevronDown, User, Globe, MessageSquare, MessagesSquare, RefreshCw, BarChart3 } from 'lucide-react';
 import { useAnalyticsBundle, isConversationBundle, type AnalyticsBundle } from '@/hooks/useAnalyticsBundle';
 import { useAccessToken } from '@/hooks/useAccessToken';
 
@@ -57,6 +57,8 @@ const DATE_PRESETS: { label: string; getDates: () => { from: string; to: string 
   }
 ];
 
+const ANALYTICS_PREFS_KEY = 'george-analytics-preferences';
+
 export default function AnalyticsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -72,16 +74,43 @@ export default function AnalyticsPage() {
   const [page, setPage] = useState(1);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
-  // Read initial values from URL params
+  // Read initial values from URL params, then localStorage, then defaults
   const urlView = searchParams.get('view');
   const urlScope = searchParams.get('scope');
-  const [scope, setScope] = useState<AnalyticsScope>(() =>
-    urlScope === 'personal' || urlScope === 'global' ? urlScope : 'global'
-  );
-  const [view, setView] = useState<AnalyticsView>(() =>
-    urlView === 'message' || urlView === 'conversation' ? urlView : 'message'
-  );
+  const [scope, setScope] = useState<AnalyticsScope>(() => {
+    if (urlScope === 'personal' || urlScope === 'global') return urlScope;
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(ANALYTICS_PREFS_KEY);
+        if (saved) {
+          const prefs = JSON.parse(saved);
+          if (prefs.scope === 'personal' || prefs.scope === 'global') return prefs.scope;
+        }
+      } catch {}
+    }
+    return 'global';
+  });
+  const [view, setView] = useState<AnalyticsView>(() => {
+    if (urlView === 'message' || urlView === 'conversation') return urlView;
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(ANALYTICS_PREFS_KEY);
+        if (saved) {
+          const prefs = JSON.parse(saved);
+          if (prefs.view === 'message' || prefs.view === 'conversation') return prefs.view;
+        }
+      } catch {}
+    }
+    return 'message';
+  });
   const limit = 10;
+
+  // Save preferences to localStorage when they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(ANALYTICS_PREFS_KEY, JSON.stringify({ view, scope }));
+    } catch {}
+  }, [view, scope]);
 
   // Use SWR for data fetching with caching
   const { bundle, isLoading: bundleLoading, error: bundleError, refresh } = useAnalyticsBundle({
@@ -164,8 +193,15 @@ export default function AnalyticsPage() {
 
   return (
     <main className="george-analytics">
+          <section className="george-docs-hero">
+            <BarChart3 size={48} className="george-docs-hero-icon" />
+            <div>
+              <h2>Analytics</h2>
+              <p>Track usage metrics, feedback trends, and performance insights across conversations.</p>
+            </div>
+          </section>
+
           <div className="george-analytics-header">
-            <h1 className="george-analytics-title">Analytics Dashboard</h1>
             <div className="george-analytics-actions">
               {/* View Toggle */}
               <div className="george-analytics-view-toggle">

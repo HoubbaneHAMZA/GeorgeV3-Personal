@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { CircleHelp } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import yaml from 'yaml';
 import { useFaqData } from '@/hooks/useFaqData';
@@ -399,6 +400,10 @@ export default function FaqPage() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const paginationPagesRef = useRef<HTMLDivElement | null>(null);
+  const [pageIndicatorStyle, setPageIndicatorStyle] = useState<{ x: number; width: number; height: number } | null>(
+    null
+  );
 
   // Advanced filters
   const [categoryFilter, setCategoryFilter] = useState<string>('');
@@ -697,6 +702,42 @@ export default function FaqPage() {
     setCurrentPage(1);
   }, [searchQuery, typeFilter, categoryFilter, subCategoryFilter, interventionTypeFilter, softwareFilter, softwareVersionFilter, osFilter, osVersionFilter]);
 
+  useLayoutEffect(() => {
+    const container = paginationPagesRef.current;
+    if (!container) {
+      setPageIndicatorStyle(null);
+      return;
+    }
+    const activeButton = container.querySelector<HTMLButtonElement>(
+      `.george-faq-pagination-page[data-page="${currentPage}"]`
+    );
+    if (!activeButton) {
+      setPageIndicatorStyle(null);
+      return;
+    }
+    const buttonRect = activeButton.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const x = buttonRect.left - containerRect.left;
+    setPageIndicatorStyle({ x, width: buttonRect.width, height: buttonRect.height });
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const container = paginationPagesRef.current;
+      if (!container) return;
+      const activeButton = container.querySelector<HTMLButtonElement>(
+        `.george-faq-pagination-page[data-page="${currentPage}"]`
+      );
+      if (!activeButton) return;
+      const buttonRect = activeButton.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const x = buttonRect.left - containerRect.left;
+      setPageIndicatorStyle({ x, width: buttonRect.width, height: buttonRect.height });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [currentPage]);
+
   const toggleExpand = (key: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -890,7 +931,7 @@ export default function FaqPage() {
     <div className="george-app">
       <main className="george-docs">
         <section className="george-docs-hero">
-          <img src="/george-logo.png" alt="George" className="george-docs-hero-logo" />
+          <CircleHelp size={48} className="george-docs-hero-icon" />
           <div>
             <h2>FAQ</h2>
             <p>Browse frequently asked questions derived from support interactions.</p>
@@ -1296,8 +1337,9 @@ export default function FaqPage() {
 
         {!loading && !error && filteredItems.length > 0 && (
           <>
-          <section className="george-faq-list">
-            {paginatedItems.map((item, idx) => {
+          <div className="george-faq-list-page" key={`faq-page-${currentPage}`}>
+            <section className="george-faq-list">
+              {paginatedItems.map((item, idx) => {
               const key = item.doc_id || `qai-${idx}`;
               const isExpanded = expandedIds.has(key);
               const content = parseQAIContent(item.exact_content);
@@ -1609,7 +1651,8 @@ export default function FaqPage() {
                 </div>
               );
             })}
-          </section>
+            </section>
+          </div>
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
@@ -1642,7 +1685,20 @@ export default function FaqPage() {
                   </svg>
                 </button>
                 
-                <div className="george-faq-pagination-pages">
+                <div className="george-faq-pagination-pages" ref={paginationPagesRef}>
+                  <span
+                    className="george-faq-pagination-indicator"
+                    style={
+                      pageIndicatorStyle
+                        ? {
+                            width: `${pageIndicatorStyle.width}px`,
+                            height: `${pageIndicatorStyle.height}px`,
+                            transform: `translateX(${pageIndicatorStyle.x}px)`
+                          }
+                        : { opacity: 0 }
+                    }
+                    aria-hidden="true"
+                  />
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(page => {
                       // Show first, last, current, and pages around current
@@ -1662,6 +1718,7 @@ export default function FaqPage() {
                             type="button"
                             className={`george-faq-pagination-page ${currentPage === page ? 'is-active' : ''}`}
                             onClick={() => setCurrentPage(page)}
+                            data-page={page}
                           >
                             {page}
                           </button>

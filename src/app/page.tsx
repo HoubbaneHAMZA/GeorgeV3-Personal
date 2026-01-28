@@ -453,6 +453,7 @@ export default function Home() {
   const branchesRef = useRef<HTMLDivElement | null>(null);
   const [arrowPaths, setArrowPaths] = useState<string[]>([]);
   const [toolTagPositions, setToolTagPositions] = useState<Array<{ left: number; top: number }>>([]);
+  const [toolsContainerHeight, setToolsContainerHeight] = useState(260);
   const toolTagPositionsRef = useRef<Array<{ left: number; top: number }>>([]);
   const stepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const chatTranscriptRef = useRef<HTMLDivElement | null>(null);
@@ -1327,22 +1328,26 @@ export default function Home() {
     const anchorY = anchorRect.top + anchorRect.height / 2 - containerRect.top;
 
     const width = Math.max(containerRect.width, 360);
-    const height = Math.max(containerRect.height, 260);
     const maxPerRing = 4;
     const baseRadius = 200;
     const ringGap = 80;
+    // Calculate how many rings we need and ensure height accommodates them
+    const ringCount = Math.ceil(toolTags.length / maxPerRing);
+    const neededHeight = baseRadius + (ringCount - 1) * ringGap + 60;
+    const height = Math.max(containerRect.height, neededHeight, 260);
+    setToolsContainerHeight(Math.max(neededHeight, 260));
     const startAngle = Math.PI * 0.85;
     const endAngle = Math.PI * 0.15;
 
     const nextPositions = toolTags.map((label, index) => {
       const ringIndex = Math.floor(index / maxPerRing);
       const ringStart = ringIndex * maxPerRing;
-      const ringCount = Math.min(maxPerRing, toolTags.length - ringStart);
+      const itemsInRing = Math.min(maxPerRing, toolTags.length - ringStart);
       const positionIndex = index - ringStart;
       const angle =
-        ringCount === 1
+        itemsInRing === 1
           ? Math.PI / 2
-          : startAngle + (endAngle - startAngle) * (positionIndex / (ringCount - 1));
+          : startAngle + (endAngle - startAngle) * (positionIndex / (itemsInRing - 1));
       const radius = baseRadius + ringIndex * ringGap;
       let left = anchorX + Math.cos(angle) * radius;
       let top = anchorY + Math.sin(angle) * radius + ringIndex * 8;
@@ -3450,7 +3455,7 @@ export default function Home() {
                             />
                           ))}
                         </svg>
-                        <div className="george-thinking-tools" aria-label="Active tools">
+                        <div className="george-thinking-tools" aria-label="Active tools" style={{ minHeight: `${toolsContainerHeight}px` }}>
                           {toolTags.map((label, index) => (
                             <div
                               key={label}
@@ -3479,6 +3484,9 @@ export default function Home() {
                   const traceQueries = trace?.agentThinking?.queries ?? [];
                   const hasSources = Boolean(message.sources && message.sources.length > 0);
                   const hasTrace = Boolean(message.timing || traceQueries.length > 0 || trace?.queryAnalysis);
+                  const hasMetaRow =
+                    message.role === 'assistant' &&
+                    (hasSources || hasTrace || message.interactionId || message.feedbackReady);
                   const groupedTools = traceQueries.reduce<Record<string, typeof traceQueries>>((groups, q) => {
                     const label = q.tool.startsWith('vector_store_search_')
                       ? q.tool.replace('vector_store_search_', '')
@@ -3520,7 +3528,7 @@ export default function Home() {
                           />
                         )}
                       </div>
-                      {message.role === 'assistant' && (hasSources || hasTrace || message.interactionId || message.feedbackReady) ? (
+                      {hasMetaRow ? (
                         <div className="george-chat-meta">
                           {hasSources ? (
                             <button
@@ -3715,7 +3723,7 @@ export default function Home() {
                               />
                             ))}
                           </svg>
-                          <div className="george-thinking-tools" aria-label="Active tools">
+                          <div className="george-thinking-tools" aria-label="Active tools" style={{ minHeight: `${toolsContainerHeight}px` }}>
                             {toolTags.map((label, index) => (
                               <div
                                 key={`overlay-tool-${label}`}
@@ -3738,7 +3746,7 @@ export default function Home() {
               ) : null}
             </div>
         </section>
-        {conversationId && messages.length > 0 ? (
+        {conversationId && messages.length > 0 && !loading ? (
           <div className="george-conversation-feedback-container">
             <ConversationFeedback
               conversationId={conversationId}
