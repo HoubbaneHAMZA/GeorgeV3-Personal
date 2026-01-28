@@ -201,15 +201,15 @@ export default function AnalyticsTrends({
     // Transform data based on view
     const chartData = costData.map(d => {
       if (view === 'all') {
-        return { date: d.date, value: d.total_cost, ...d };
+        return { ...d, value: d.total_cost };
       }
       if (view === 'conversation') {
         const count = d.total_conversations || 0;
-        return { date: d.date, value: count > 0 ? d.total_cost / count : 0, ...d };
+        return { ...d, value: count > 0 ? d.total_cost / count : 0 };
       }
       // Message view
       const count = d.total_runs || 0;
-      return { date: d.date, value: count > 0 ? d.total_cost / count : 0, ...d };
+      return { ...d, value: count > 0 ? d.total_cost / count : 0 };
     });
 
     const formatYAxis = (value: number) => {

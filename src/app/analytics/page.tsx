@@ -388,7 +388,7 @@ export default function AnalyticsPage() {
                   data={bundle?.overview ?? null}
                   isLoading={bundleLoading}
                   error={bundleError}
-                  view={view}
+                  view={apiView}
                 />
               )}
 
