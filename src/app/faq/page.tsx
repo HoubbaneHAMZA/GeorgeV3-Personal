@@ -1191,99 +1191,184 @@ export default function FaqPage() {
             </summary>
 
             <div className="george-faq-process-content">
-              {/* Process Flow Diagram */}
-              <div className="george-faq-flow">
-                {/* Step 1: Input */}
-                <div className="george-faq-flow-step">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <rect x="4" y="6" width="24" height="20" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M4 12H28" stroke="currentColor" strokeWidth="1.5"/>
-                      <circle cx="8" cy="9" r="1" fill="currentColor"/>
-                      <circle cx="11" cy="9" r="1" fill="currentColor"/>
-                      <circle cx="14" cy="9" r="1" fill="currentColor"/>
-                      <path d="M8 16H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M8 20H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              {/* Detailed Infographic */}
+              <div className="george-faq-infographic">
+                {/* Title */}
+                <div className="george-faq-infographic-header">
+                  <h3 className="george-faq-infographic-title">How the Support Agent Improves Over Time</h3>
+                  <p className="george-faq-infographic-subtitle">Turning real support history into faster, more accurate replies</p>
+                </div>
+
+                {/* Legend */}
+                <div className="george-faq-legend">
+                  <div className="george-faq-legend-item">
+                    <div className="george-faq-legend-orb is-faq"></div>
+                    <span>FAQs (High Priority)</span>
+                  </div>
+                  <div className="george-faq-legend-item">
+                    <div className="george-faq-legend-orb is-ticket"></div>
+                    <span>Support Tickets</span>
+                  </div>
+                </div>
+
+                {/* Main 4-Step Flow */}
+                <div className="george-faq-infographic-flow">
+                  {/* Step 1: Knowledge Inputs */}
+                  <div className="george-faq-step-card">
+                    <span className="george-faq-step-number">STEP 1</span>
+                    <h4 className="george-faq-step-title">Knowledge Inputs</h4>
+                    <p className="george-faq-step-subtitle">Prepare data with metadata & embeddings</p>
+                    <div className="george-faq-input-sources">
+                      <div className="george-faq-source">
+                        <div className="george-faq-source-icon is-faq">📄</div>
+                        <div>
+                          <div className="george-faq-source-text">Trusted FAQs</div>
+                          <div className="george-faq-orb-preview">
+                            <span className="george-faq-mini-orb is-faq"></span>
+                            <span className="george-faq-mini-orb is-faq"></span>
+                            <span className="george-faq-mini-orb is-faq"></span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="george-faq-source">
+                        <div className="george-faq-source-icon is-ticket">📥</div>
+                        <div>
+                          <div className="george-faq-source-text">Closed Tickets</div>
+                          <div className="george-faq-orb-preview">
+                            <span className="george-faq-mini-orb is-ticket"></span>
+                            <span className="george-faq-mini-orb is-ticket"></span>
+                            <span className="george-faq-mini-orb is-ticket"></span>
+                            <span className="george-faq-mini-orb is-ticket"></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="george-faq-metadata-tags">
+                      <span className="george-faq-tag">product</span>
+                      <span className="george-faq-tag">version</span>
+                      <span className="george-faq-tag">OS</span>
+                      <span className="george-faq-tag">language</span>
+                    </div>
+                    <div className="george-faq-tech-label">
+                      <span className="george-faq-tech-highlight">OpenAI</span> text-embedding-3-large
+                    </div>
+                  </div>
+
+                  <div className="george-faq-arrow-connector">
+                    <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                      <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Tickets</div>
-                  <div className="george-faq-flow-desc">Customer conversations</div>
-                </div>
 
-                <div className="george-faq-flow-connector">
-                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
-                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
+                  {/* Step 2: Clustering */}
+                  <div className="george-faq-step-card is-wide">
+                    <span className="george-faq-step-number">STEP 2</span>
+                    <h4 className="george-faq-step-title">Smart Clustering</h4>
+                    <p className="george-faq-step-subtitle">Group similar items automatically</p>
+                    <div className="george-faq-clusters">
+                      <div className="george-faq-cluster">
+                        <span className="george-faq-cluster-label">Cluster A</span>
+                        <div className="george-faq-cluster-orbs">
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                        </div>
+                        <span className="george-faq-cluster-type is-new">Tickets Only</span>
+                      </div>
+                      <div className="george-faq-cluster">
+                        <span className="george-faq-cluster-label">Cluster B</span>
+                        <div className="george-faq-cluster-orbs">
+                          <span className="george-faq-cluster-orb is-faq"></span>
+                          <span className="george-faq-cluster-orb is-faq"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                        </div>
+                        <span className="george-faq-cluster-type is-mixed">FAQ + Tickets</span>
+                      </div>
+                      <div className="george-faq-cluster">
+                        <span className="george-faq-cluster-label">Cluster C</span>
+                        <div className="george-faq-cluster-orbs">
+                          <span className="george-faq-cluster-orb is-faq"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                          <span className="george-faq-cluster-orb is-ticket"></span>
+                        </div>
+                        <span className="george-faq-cluster-type is-mixed">FAQ + Tickets</span>
+                      </div>
+                    </div>
+                    <div className="george-faq-tech-label">
+                      <span className="george-faq-tech-highlight">HDBSCAN</span> clustering algorithm
+                    </div>
+                  </div>
 
-                {/* Step 2: Analyze */}
-                <div className="george-faq-flow-step">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <circle cx="16" cy="16" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M16 10V16L20 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <div className="george-faq-arrow-connector">
+                    <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                      <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Analyze</div>
-                  <div className="george-faq-flow-desc">AI reads each ticket</div>
-                </div>
 
-                <div className="george-faq-flow-connector">
-                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
-                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
+                  {/* Step 3: LLM Consolidation */}
+                  <div className="george-faq-step-card">
+                    <span className="george-faq-step-number">STEP 3</span>
+                    <h4 className="george-faq-step-title">LLM Consolidation</h4>
+                    <p className="george-faq-step-subtitle">Process each cluster intelligently</p>
+                    <div className="george-faq-consolidation">
+                      <div className="george-faq-consolidation-item">
+                        <div className="george-faq-consolidation-input">
+                          <span className="george-faq-mini-orb is-ticket"></span>
+                          <span className="george-faq-mini-orb is-ticket"></span>
+                          <span className="george-faq-mini-orb is-ticket"></span>
+                        </div>
+                        <span className="george-faq-consolidation-arrow">→</span>
+                        <span className="george-faq-consolidation-output is-new">NEW FAQ</span>
+                      </div>
+                      <div className="george-faq-consolidation-item">
+                        <div className="george-faq-consolidation-input">
+                          <span className="george-faq-mini-orb is-faq"></span>
+                          <span className="george-faq-mini-orb is-ticket"></span>
+                          <span className="george-faq-mini-orb is-ticket"></span>
+                        </div>
+                        <span className="george-faq-consolidation-arrow">→</span>
+                        <span className="george-faq-consolidation-output is-modified">MODIFIED</span>
+                      </div>
+                    </div>
+                    <p className="george-faq-priority-note">FAQs have high priority — kept & improved</p>
+                    <div className="george-faq-tech-label">
+                      <span className="george-faq-tech-highlight">LLM</span> answer consolidation
+                    </div>
+                  </div>
 
-                {/* Step 3: Group Similar */}
-                <div className="george-faq-flow-step">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <circle cx="10" cy="13" r="5" stroke="currentColor" strokeWidth="1.5"/>
-                      <circle cx="22" cy="13" r="5" stroke="currentColor" strokeWidth="1.5"/>
-                      <circle cx="16" cy="22" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                  <div className="george-faq-arrow-connector">
+                    <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                      <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
-                  <div className="george-faq-flow-label">Group Similar</div>
-                  <div className="george-faq-flow-desc">Find related questions</div>
-                </div>
 
-                <div className="george-faq-flow-connector">
-                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
-                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-
-                {/* Step 4: Create Answers */}
-                <div className="george-faq-flow-step">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <path d="M8 8L16 16M8 24L16 16M24 16H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      <circle cx="16" cy="16" r="3" fill="currentColor"/>
-                    </svg>
+                  {/* Step 4: Output */}
+                  <div className="george-faq-step-card is-result">
+                    <span className="george-faq-step-number">STEP 4</span>
+                    <h4 className="george-faq-step-title">High-Value Knowledge</h4>
+                    <p className="george-faq-step-subtitle">Refined FAQs ready for agents</p>
+                    <div className="george-faq-transformation">
+                      <div className="george-faq-transform-box">
+                        <div className="george-faq-transform-num">100+</div>
+                        <div className="george-faq-transform-label">tickets & FAQs</div>
+                      </div>
+                      <span className="george-faq-transform-arrow">→</span>
+                      <div className="george-faq-transform-box is-output">
+                        <div className="george-faq-transform-num">10</div>
+                        <div className="george-faq-transform-label">refined FAQs</div>
+                      </div>
+                    </div>
+                    <div className="george-faq-benefits">
+                      <div className="george-faq-benefit">✓ Less repetition</div>
+                      <div className="george-faq-benefit">✓ More consistent</div>
+                      <div className="george-faq-benefit">✓ Easier escalation</div>
+                    </div>
                   </div>
-                  <div className="george-faq-flow-label">Merge</div>
-                  <div className="george-faq-flow-desc">Combine into one answer</div>
-                </div>
-
-                <div className="george-faq-flow-connector">
-                  <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
-                    <path d="M0 12H24M24 12L18 7M24 12L18 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-
-                {/* Step 5: Output */}
-                <div className="george-faq-flow-step is-result">
-                  <div className="george-faq-flow-icon">
-                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                      <path d="M9 4H19L25 10V28H9V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M19 4V10H25" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                      <path d="M13 16H21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M13 20H21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <path d="M13 24H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                  <div className="george-faq-flow-label">FAQ Ready</div>
-                  <div className="george-faq-flow-desc">Review & publish</div>
                 </div>
               </div>
 
