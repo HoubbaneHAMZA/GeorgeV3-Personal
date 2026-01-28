@@ -3,11 +3,14 @@
 import { useCallback, useRef } from 'react';
 import useSWR, { mutate as globalMutate } from 'swr';
 
+// Source can be old format (string) or new format ({ doc_id, url })
+export type SourceItem = { doc_id: string; url: string };
+
 export type CachedConversationMessage = {
   id: string;
   user_input: string;
   response_content: string;
-  response_sources?: string[];
+  response_sources?: Array<string | SourceItem>;
   trace_data?: unknown;
   timing_server_ms?: number;
   feedback_rating?: string | null;

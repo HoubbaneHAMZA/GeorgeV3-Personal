@@ -44,7 +44,7 @@ type AgentInputPayload = {
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
-  sources?: string[];
+  sources?: SourceItem[];
   trace?: AgentTraceData;
   timing?: TimingInfo;
   isTraceOpen?: boolean;
@@ -58,6 +58,8 @@ type ChatMessage = {
   originalUserInput?: string;
 };
 
+type SourceItem = { doc_id: string; url: string };
+
 type AgentTraceData = {
   queryAnalysis?: { metadata: Record<string, unknown>; isZendesk: boolean };
   attachments?: { total: number; cached: number; analyzed: number };
@@ -67,7 +69,7 @@ type AgentTraceData = {
       tool: string;
       query: string;
       filters: unknown;
-      sources: string[];
+      sources: SourceItem[];
       output?: unknown;
     }>;
   };
@@ -77,7 +79,7 @@ type TraceQuery = {
   tool: string;
   query: string;
   filters: unknown;
-  sources: string[];
+  sources: SourceItem[];
   output?: unknown;
 };
 
@@ -428,7 +430,7 @@ export default function Home() {
     started: boolean;
     queryAnalysis?: { metadata: Record<string, unknown>; isZendesk: boolean };
     attachments?: { total: number; cached: number; analyzed: number };
-    agentThinking?: { queries: Array<{ callId: string; tool: string; query: string; filters: unknown; sources: string[]; output?: unknown }> };
+    agentThinking?: { queries: Array<{ callId: string; tool: string; query: string; filters: unknown; sources: SourceItem[]; output?: unknown }> };
   }>({ started: false });
   const [statusSteps, setStatusSteps] = useState<Array<{ id: string; label: string }>>([]);
   const [activeStatusId, setActiveStatusId] = useState<string | null>(null);
@@ -505,6 +507,116 @@ export default function Home() {
       return url;
     }
   };
+
+  // Format doc_id for human-readable display
+  // e.g., "release_notes__photolab__windows__v3__photolab_v3_release-note_win_en__sv-3.md"
+  // becomes "PhotoLab v3 Windows"
+  const formatDocId = (docId: string): string => {
+    if (!docId) return docId;
+
+    // Product name mappings
+    const productNames: Record<string, string> = {
+      photolab: 'PhotoLab',
+      nikcollection: 'Nik Collection',
+      pureraw: 'PureRAW',
+      filmpack: 'FilmPack',
+      viewpoint: 'ViewPoint',
+      nik: 'Nik Collection'
+    };
+
+    // Remove file extension
+    let cleaned = docId.replace(/\.[a-z0-9]+$/i, '');
+
+    // Remove metadata suffixes like __sv-3, __osv-15
+    cleaned = cleaned.replace(/[_-]*(sv|osv)-\d+/gi, '');
+
+    // Check if this is a release note document
+    const isReleaseNote = /release[_-]?note/i.test(cleaned);
+
+    // Extract key information
+    let product = '';
+    let version = '';
+    let platform = '';
+
+    // Find product name
+    for (const [key, name] of Object.entries(productNames)) {
+      if (cleaned.toLowerCase().includes(key)) {
+        product = name;
+        break;
+      }
+    }
+
+    // Find version (v3, v4, v5, v6, v7, v8, etc.)
+    const versionMatch = cleaned.match(/[_-]v(\d+)/i);
+    if (versionMatch) {
+      version = `v${versionMatch[1]}`;
+    }
+
+    // Find platform
+    if (/windows|win/i.test(cleaned)) {
+      platform = 'Windows';
+    } else if (/mac|macos/i.test(cleaned)) {
+      platform = 'Mac';
+    }
+
+    // For release notes, build a structured label: "Product vX Platform"
+    if (isReleaseNote && product) {
+      const parts = [product];
+      if (version) parts.push(version);
+      if (platform) parts.push(platform);
+      return parts.join(' ');
+    }
+
+    // If it's a release note but no product found, and the doc_id is very short/generic,
+    // return the original (might be a doc_title like "Release notes" - not useful for display)
+    // Signal this to the caller by returning empty so they can use a different fallback
+    if (isReleaseNote && !product && docId.toLowerCase().replace(/[^a-z]/g, '') === 'releasenotes') {
+      // Return empty to signal "use URL fallback"
+      return '';
+    }
+
+    // For non-release notes or unknown products, use a simpler approach
+    const parts = cleaned.split(/_{2,}|[-_]+/).filter(Boolean);
+    const seen = new Set<string>();
+    const uniqueParts: string[] = [];
+
+    for (const part of parts) {
+      const lower = part.toLowerCase();
+
+      // Skip language codes and filler
+      if (['en', 'win', 'mac', 'note', 'notes'].includes(lower)) continue;
+
+      // Skip if duplicate
+      const baseWord = lower.replace(/_?v\d+$/i, '');
+      if (seen.has(baseWord)) continue;
+      seen.add(baseWord);
+
+      // Format product names
+      if (productNames[lower]) {
+        uniqueParts.push(productNames[lower]);
+      } else if (/^v\d+$/i.test(part)) {
+        uniqueParts.push(part.toLowerCase());
+      } else if (lower === 'release') {
+        uniqueParts.push('Release Notes');
+        seen.add('notes');
+      } else if (lower === 'windows') {
+        uniqueParts.push('Windows');
+      } else if (lower === 'macos') {
+        uniqueParts.push('Mac');
+      } else {
+        uniqueParts.push(part.charAt(0).toUpperCase() + part.slice(1).toLowerCase());
+      }
+    }
+
+    const result = uniqueParts.join(' ').replace(/\s+/g, ' ').trim();
+
+    // Fallback to truncated original if result is too short
+    if (result.length < 3) {
+      return docId.length > 40 ? docId.slice(0, 37) + '...' : docId;
+    }
+
+    return result;
+  };
   const createAssistantMessage = (content: string): ChatMessage => ({
     role: 'assistant',
     content,
@@ -557,10 +669,19 @@ export default function Home() {
     for (const query of remoteQueries) {
       const existing = byCallId.get(query.callId);
       if (existing) {
+        // Dedupe sources by URL (object identity doesn't work with Set)
+        const seenUrls = new Set<string>();
+        const mergedSources: SourceItem[] = [];
+        for (const source of [...(existing.sources || []), ...(query.sources || [])]) {
+          if (source.url && !seenUrls.has(source.url)) {
+            seenUrls.add(source.url);
+            mergedSources.push(source);
+          }
+        }
         byCallId.set(query.callId, {
           ...existing,
           ...query,
-          sources: Array.from(new Set([...(existing.sources || []), ...(query.sources || [])]))
+          sources: mergedSources
         });
       } else {
         byCallId.set(query.callId, { ...query, sources: [...(query.sources || [])] });
@@ -571,15 +692,49 @@ export default function Home() {
     }
     return merged;
   };
-  const buildSourcesFromTrace = (trace?: AgentTraceData): string[] => {
+  const buildSourcesFromTrace = (trace?: AgentTraceData): SourceItem[] => {
     if (!trace?.agentThinking?.queries) return [];
-    return Array.from(
-      new Set(
-        trace.agentThinking.queries
-          .flatMap((q) => q.sources || [])
-          .filter((url) => url.length > 0)
-      )
-    );
+    const seen = new Map<string, SourceItem>();
+    for (const q of trace.agentThinking.queries) {
+      for (const source of q.sources || []) {
+        if (source.url && !seen.has(source.url)) {
+          seen.set(source.url, source);
+        }
+      }
+    }
+    return Array.from(seen.values());
+  };
+  // Helper to convert old trace data format (sources as strings) to new format (sources as SourceItem objects)
+  const convertTraceData = (rawTrace: unknown): AgentTraceData | undefined => {
+    if (!rawTrace || typeof rawTrace !== 'object') return undefined;
+    const trace = rawTrace as Record<string, unknown>;
+    if (!trace.agentThinking || typeof trace.agentThinking !== 'object') return rawTrace as AgentTraceData;
+    const agentThinking = trace.agentThinking as Record<string, unknown>;
+    if (!Array.isArray(agentThinking.queries)) return rawTrace as AgentTraceData;
+    // Convert each query's sources from old format (string[]) to new format (SourceItem[])
+    const convertedQueries = agentThinking.queries.map((q: unknown) => {
+      if (!q || typeof q !== 'object') return q;
+      const query = q as Record<string, unknown>;
+      if (!Array.isArray(query.sources)) return query;
+      const convertedSources = query.sources.map((s: unknown): SourceItem | null => {
+        if (typeof s === 'string') {
+          // Old format: just URL - use URL as doc_id too for display
+          return s ? { doc_id: s, url: s } : null;
+        }
+        if (s && typeof s === 'object' && 'doc_id' in s && 'url' in s) {
+          // New format: already has doc_id and url
+          const source = s as SourceItem;
+          // Only include sources with non-empty doc_id and url
+          return (source.doc_id && source.url) ? source : null;
+        }
+        return null;
+      }).filter((s): s is SourceItem => s !== null);
+      return { ...query, sources: convertedSources };
+    });
+    return {
+      ...trace,
+      agentThinking: { queries: convertedQueries }
+    } as AgentTraceData;
   };
   const isTicketMode = Boolean(ticketTag);
   const maxAttachments = 3;
@@ -977,12 +1132,29 @@ export default function Home() {
         role: 'user',
         content: msg.user_input
       });
+      // Convert sources from old format (string[]) to new format (SourceItem[])
+      let sources: SourceItem[] | undefined;
+      if (msg.response_sources && msg.response_sources.length > 0) {
+        sources = msg.response_sources
+          .map((s): SourceItem | null => {
+            if (typeof s === 'string') {
+              // Old format: just URL - use URL as doc_id too for display
+              return s ? { doc_id: s, url: s } : null;
+            }
+            if (s && typeof s === 'object' && 'doc_id' in s && 'url' in s) {
+              // New format: already has doc_id and url
+              return s as SourceItem;
+            }
+            return null;
+          })
+          .filter((s): s is SourceItem => s !== null);
+      }
       // Add assistant response
       loadedMessages.push({
         role: 'assistant',
         content: msg.response_content,
-        sources: msg.response_sources,
-        trace: msg.trace_data as AgentTraceData | undefined,
+        sources,
+        trace: convertTraceData(msg.trace_data),
         timing: msg.timing_server_ms ? { server_ms: msg.timing_server_ms, round_trip_ms: 0 } : undefined,
         interactionId: msg.id,
         feedbackRating: msg.feedback_rating ? (msg.feedback_rating as FeedbackRating) : undefined,
@@ -2115,7 +2287,7 @@ export default function Home() {
         tool: string;
         query?: string;
         filters?: unknown;
-        sources?: string[];
+        sources?: SourceItem[];
         output?: unknown;
       }) => {
         const trace = traceBufferRef.current || {};
@@ -2374,13 +2546,19 @@ export default function Home() {
               console.log('[SQL_OUTPUT]', { toolName, callId, output: eventData.output });
             }
             
-            // Extract sources from eventData.sources (passed separately from server)
-            const sourcesRaw = Array.isArray(eventData.sources) 
-              ? eventData.sources.map((s: unknown) => String(s)).filter((url: string) => url.length > 0)
-              : [];
-            
-            // Deduplicate sources by keeping only unique URLs
-            const sources = Array.from(new Set(sourcesRaw));
+            // Extract sources from eventData.sources (passed as {doc_id, url} objects)
+            const sources: SourceItem[] = [];
+            if (Array.isArray(eventData.sources)) {
+              for (const s of eventData.sources) {
+                if (s && typeof s === 'object' && 'doc_id' in s && 'url' in s) {
+                  const source = s as SourceItem;
+                  // Only include sources with non-empty STRING doc_id and url
+                  if (typeof source.doc_id === 'string' && source.doc_id && typeof source.url === 'string' && source.url) {
+                    sources.push(source);
+                  }
+                }
+              }
+            }
             
             // Track all tools, not just vector store tools
             if (callId) {
@@ -2479,11 +2657,20 @@ export default function Home() {
           const mergedTrace = mergeTraceData(traceBufferRef.current, serverTrace);
           traceBufferRef.current = mergedTrace || traceBufferRef.current;
           const traceSnapshot = snapshotTraceData(mergedTrace);
-          const sourcesFromServer = Array.isArray((data as { sources?: unknown }).sources)
-            ? (data as { sources?: unknown }).sources as string[]
-            : [];
+          const sourcesFromServer: SourceItem[] = [];
+          if (Array.isArray((data as { sources?: unknown }).sources)) {
+            for (const s of (data as { sources: unknown[] }).sources) {
+              if (s && typeof s === 'object' && 'doc_id' in s && 'url' in s) {
+                const source = s as SourceItem;
+                // Only include sources with non-empty STRING doc_id and url
+                if (typeof source.doc_id === 'string' && source.doc_id && typeof source.url === 'string' && source.url) {
+                  sourcesFromServer.push(source);
+                }
+              }
+            }
+          }
           const sourcesForTrace = sourcesFromServer.length > 0
-            ? Array.from(new Set(sourcesFromServer.map((s) => String(s)).filter((s) => s.length > 0)))
+            ? sourcesFromServer
             : buildSourcesFromTrace(traceSnapshot);
           const timingInfo: TimingInfo = { round_trip_ms: finalRoundTripMs, server_ms: serverMs };
           const finalSessionId = typeof data?.sessionId === 'string' ? data.sessionId : sessionId;
@@ -3812,15 +3999,17 @@ export default function Home() {
                     <>
                       <div className="george-meta-title">Sources</div>
                       <div className="george-sources-list">
-                        {(message.sources ?? []).map((url, sourceIndex) => (
+                        {(message.sources ?? [])
+                          .filter((source) => typeof source.doc_id === 'string' && typeof source.url === 'string')
+                          .map((source, sourceIndex) => (
                           <a
-                            key={`${url}-${sourceIndex}`}
-                            href={url}
+                            key={`${source.url}-${sourceIndex}`}
+                            href={source.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="george-source-item"
                           >
-                            <span>{formatSourceLabel(url)}</span>
+                            <span>{formatDocId(source.doc_id) || formatSourceLabel(source.url)}</span>
                             <span className="george-source-icon" aria-hidden="true">↗</span>
                           </a>
                         ))}
@@ -3908,15 +4097,17 @@ export default function Home() {
                                           <div className="george-trace-tool-meta">
                                             <span>Found {q.sources.length} relevant sources</span>
                                             <div className="george-trace-source-list">
-                                              {q.sources.map((url, sourceIndex) => (
+                                              {q.sources
+                                                .filter((source) => typeof source.doc_id === 'string' && typeof source.url === 'string')
+                                                .map((source, sourceIndex) => (
                                                 <a
                                                   key={`${q.callId}-source-${sourceIndex}`}
-                                                  href={url}
+                                                  href={source.url}
                                                   target="_blank"
                                                   rel="noopener noreferrer"
                                                   className="george-trace-source"
                                                 >
-                                                  {formatSourceLabel(url)}
+                                                  {formatDocId(source.doc_id) || formatSourceLabel(source.url)}
                                                 </a>
                                               ))}
                                             </div>
