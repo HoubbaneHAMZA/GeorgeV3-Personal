@@ -3,11 +3,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ComponentProps, MouseEvent } from 'react';
+import { useNavigationGuard } from '@/contexts/NavigationGuardContext';
 
 type TransitionLinkProps = ComponentProps<typeof Link>;
 
 export default function TransitionLink({ href, onClick, children, ...props }: TransitionLinkProps) {
   const router = useRouter();
+  const { requestNavigation } = useNavigationGuard();
 
   const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
     // Call original onClick if provided
@@ -15,6 +17,12 @@ export default function TransitionLink({ href, onClick, children, ...props }: Tr
 
     // If default was prevented, don't do anything
     if (e.defaultPrevented) return;
+
+    // Check navigation guard - if blocked, show warning modal
+    if (typeof href === 'string' && !requestNavigation(href)) {
+      e.preventDefault();
+      return;
+    }
 
     // Check if View Transitions API is available
     const supportsViewTransitions = 'startViewTransition' in document;

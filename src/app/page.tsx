@@ -11,6 +11,7 @@ import ConversationFeedback from '@/components/ConversationFeedback';
 import { useConversationPrefetch, prefetchConversation, type CachedConversation } from '@/hooks/useConversationCache';
 import { useConversationsList } from '@/hooks/useConversationsList';
 import { mutate as swrMutate } from 'swr';
+import { NavigationGuardProvider } from '@/contexts/NavigationGuardContext';
 
 function CollapsibleStep({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -348,6 +349,7 @@ export default function Home() {
   const sessionStorageKey = useMemo(() => `george:session:${pathname}`, [pathname]);
   const messagesStorageKey = useMemo(() => `george:messages:${pathname}`, [pathname]);
   const conversationIdStorageKey = useMemo(() => `george:conversationId:${pathname}`, [pathname]);
+  const streamingFlagKey = useMemo(() => `george:streaming:${pathname}`, [pathname]);
   const [input, setInput] = useState('');
   const [ticketError, setTicketError] = useState('');
   const [userEmailDraft, setUserEmailDraft] = useState('');
@@ -371,6 +373,10 @@ export default function Home() {
   const [isZendeskNotFoundClosing, setIsZendeskNotFoundClosing] = useState(false);
   const [isAgentInterruptedClosing, setIsAgentInterruptedClosing] = useState(false);
   const [isAbortConfirmClosing, setIsAbortConfirmClosing] = useState(false);
+  const [showNavigationWarning, setShowNavigationWarning] = useState(false);
+  const [isNavigationWarningClosing, setIsNavigationWarningClosing] = useState(false);
+  const [pendingNavigationHref, setPendingNavigationHref] = useState<string | null>(null);
+  const navigationWarningCloseTimeout = useRef<number | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortRequestedRef = useRef(false);
   const runModeRef = useRef<'initial' | 'chat' | null>(null);
@@ -398,6 +404,7 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [cleanupComplete, setCleanupComplete] = useState(false);
 
   // Use SWR-cached conversations list
   const {
@@ -744,6 +751,17 @@ export default function Home() {
   const showGeneratedBy = statusDone;
   const showInitialLoader = steps.started && !statusDone && !sessionId && !initialStreamStarted;
   const showTranscript = messages.length > 0 && (statusDone || sessionId || initialStreamStarted);
+
+  // Warn user before leaving page during active agent run
+  useEffect(() => {
+    if (!loading) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [loading]);
 
   // Fetch current user name for greeting
   useEffect(() => {
@@ -1327,6 +1345,7 @@ export default function Home() {
   }, [renameConversationInList]);
 
   useEffect(() => {
+    if (!cleanupComplete) return;
     try {
       const stored = localStorage.getItem(sessionStorageKey);
       if (stored && !sessionId) {
@@ -1335,10 +1354,84 @@ export default function Home() {
     } catch {
       // Ignore storage failures.
     }
-  }, [sessionStorageKey, sessionId]);
+  }, [cleanupComplete, sessionStorageKey, sessionId]);
+
+  // Clean up orphaned data from interrupted requests (refresh/navigate during streaming)
+  useEffect(() => {
+    let didFullCleanup = false;
+    try {
+      const streamingFlag = localStorage.getItem(streamingFlagKey);
+      if (streamingFlag === 'true') {
+        // Previous request was interrupted - clean up orphaned data
+        console.log('[useEffect] Cleaning up orphaned data from interrupted request');
+        localStorage.removeItem(streamingFlagKey);
+
+        // Check if there are existing messages
+        const storedMessages = localStorage.getItem(messagesStorageKey);
+        if (storedMessages) {
+          const parsedMessages = JSON.parse(storedMessages) as ChatMessage[];
+          if (Array.isArray(parsedMessages) && parsedMessages.length > 0) {
+            // Check if the last assistant message is empty (interrupted)
+            const lastMessage = parsedMessages[parsedMessages.length - 1];
+            const isLastAssistantEmpty = lastMessage?.role === 'assistant' && !lastMessage?.content?.trim();
+
+            if (isLastAssistantEmpty && parsedMessages.length >= 2) {
+              // Remove the last exchange (last user message + empty assistant response)
+              // Keep the rest of the conversation intact
+              const cleanedMessages = parsedMessages.slice(0, -2);
+
+              if (cleanedMessages.length > 0) {
+                // There are previous messages - preserve the conversation
+                console.log('[useEffect] Removing incomplete exchange, preserving conversation');
+                localStorage.setItem(messagesStorageKey, JSON.stringify(cleanedMessages));
+                // Keep sessionStorageKey and conversationIdStorageKey intact
+              } else {
+                // This was the first/only exchange - clear everything
+                console.log('[useEffect] First exchange was interrupted, clearing all data');
+                localStorage.removeItem(messagesStorageKey);
+                localStorage.removeItem(sessionStorageKey);
+                localStorage.removeItem(conversationIdStorageKey);
+                didFullCleanup = true;
+              }
+            } else if (isLastAssistantEmpty && parsedMessages.length === 1) {
+              // Only one message (empty assistant) - clear everything
+              console.log('[useEffect] Single empty message, clearing all data');
+              localStorage.removeItem(messagesStorageKey);
+              localStorage.removeItem(sessionStorageKey);
+              localStorage.removeItem(conversationIdStorageKey);
+              didFullCleanup = true;
+            }
+            // If last message is not an empty assistant, don't modify anything
+          }
+        } else {
+          // No messages stored but streaming flag was set - clear session data
+          localStorage.removeItem(sessionStorageKey);
+          localStorage.removeItem(conversationIdStorageKey);
+          didFullCleanup = true;
+        }
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+    // Trigger smooth animation when returning to home after full cleanup
+    if (didFullCleanup) {
+      if (returnHomeTimeout.current) {
+        window.clearTimeout(returnHomeTimeout.current);
+        returnHomeTimeout.current = null;
+      }
+      setIsReturningHome(true);
+      returnHomeTimeout.current = window.setTimeout(() => {
+        setIsReturningHome(false);
+        returnHomeTimeout.current = null;
+      }, 420);
+    }
+    setCleanupComplete(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount
 
   // Restore conversationId from localStorage
   useEffect(() => {
+    if (!cleanupComplete) return;
     try {
       const stored = localStorage.getItem(conversationIdStorageKey);
       if (stored && !conversationId) {
@@ -1347,9 +1440,10 @@ export default function Home() {
     } catch {
       // Ignore storage failures.
     }
-  }, [conversationIdStorageKey, conversationId]);
+  }, [cleanupComplete, conversationIdStorageKey, conversationId]);
 
   useEffect(() => {
+    if (!cleanupComplete) return;
     try {
       const stored = localStorage.getItem(messagesStorageKey);
       if (!stored || messages.length > 0) return;
@@ -1363,7 +1457,7 @@ export default function Home() {
     } catch {
       // Ignore storage failures.
     }
-  }, [messages.length, messagesStorageKey]);
+  }, [cleanupComplete, messages.length, messagesStorageKey]);
 
   // Sync feedback ratings from Supabase after loading messages from localStorage
   const feedbackSyncedRef = useRef(false);
@@ -1672,23 +1766,9 @@ export default function Home() {
     }
   };
   const handleAgentInterrupted = (message: string) => {
+    resetConversation();
     setAgentInterrupted(message);
     setIsAgentInterruptedClosing(false);
-    setMessages([]);
-    setSessionId(null);
-    setHasResponse(false);
-    setStatusSteps([]);
-    setActiveStatusId(null);
-    setStatusDone(false);
-    setSteps({ started: false });
-    setIsChatOverlayVisible(false);
-    try {
-      localStorage.removeItem(messagesStorageKey);
-      localStorage.removeItem(sessionStorageKey);
-      localStorage.removeItem(conversationIdStorageKey);
-    } catch {
-      // Ignore storage failures.
-    }
   };
   const closeAgentInterrupted = () => {
     if (!agentInterrupted || isAgentInterruptedClosing) return;
@@ -1704,23 +1784,10 @@ export default function Home() {
   };
   const removeLastExchange = () => {
     setMessages((prev) => {
-      if (prev.length === 0) return prev;
-      const next = [...prev];
-      let removedAssistant = false;
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === 'assistant') {
-          next.splice(i, 1);
-          removedAssistant = true;
-          break;
-        }
-      }
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === 'user') {
-          next.splice(i, 1);
-          break;
-        }
-      }
-      return removedAssistant ? next : next;
+      if (prev.length < 2) return prev;
+      const last = prev[prev.length - 1];
+      if (last.role !== 'assistant' || last.content.trim()) return prev;
+      return prev.slice(0, -2);
     });
   };
   const requestAbort = () => {
@@ -1753,6 +1820,12 @@ export default function Home() {
     }, 180);
     abortRequestedRef.current = true;
     abortControllerRef.current?.abort();
+    // Clear streaming flag on clean abort
+    try {
+      localStorage.removeItem(streamingFlagKey);
+    } catch {
+      // Ignore storage failures.
+    }
     if (runModeRef.current === 'initial') {
       handleAgentInterrupted('Agent was interrupted. Please ask your question again.');
     } else if (runModeRef.current === 'chat') {
@@ -1764,6 +1837,64 @@ export default function Home() {
       setIsChatOverlayVisible(false);
     }
   };
+
+  // Navigation warning handlers
+  const handleNavigationBlocked = useCallback((href: string) => {
+    setPendingNavigationHref(href);
+    setIsNavigationWarningClosing(false);
+    setShowNavigationWarning(true);
+  }, []);
+
+  const cancelNavigation = () => {
+    if (!showNavigationWarning || isNavigationWarningClosing) return;
+    setIsNavigationWarningClosing(true);
+    if (navigationWarningCloseTimeout.current) {
+      window.clearTimeout(navigationWarningCloseTimeout.current);
+    }
+    navigationWarningCloseTimeout.current = window.setTimeout(() => {
+      setShowNavigationWarning(false);
+      setIsNavigationWarningClosing(false);
+      setPendingNavigationHref(null);
+      navigationWarningCloseTimeout.current = null;
+    }, 180);
+  };
+
+  const confirmNavigation = () => {
+    if (isNavigationWarningClosing || !pendingNavigationHref) return;
+    setIsNavigationWarningClosing(true);
+    if (navigationWarningCloseTimeout.current) {
+      window.clearTimeout(navigationWarningCloseTimeout.current);
+    }
+    navigationWarningCloseTimeout.current = window.setTimeout(() => {
+      setShowNavigationWarning(false);
+      setIsNavigationWarningClosing(false);
+      navigationWarningCloseTimeout.current = null;
+    }, 180);
+    // Abort the current run (same as clicking abort button)
+    abortRequestedRef.current = true;
+    abortControllerRef.current?.abort();
+    // Clear streaming flag on clean navigation abort
+    try {
+      localStorage.removeItem(streamingFlagKey);
+    } catch {
+      // Ignore storage failures.
+    }
+    if (runModeRef.current === 'initial') {
+      handleAgentInterrupted('Agent was interrupted. Please ask your question again.');
+    } else if (runModeRef.current === 'chat') {
+      removeLastExchange();
+      setStatusSteps([]);
+      setActiveStatusId(null);
+      setStatusDone(false);
+      setSteps((prev) => ({ ...prev, started: false, agentThinking: undefined }));
+      setIsChatOverlayVisible(false);
+    }
+    // Navigate to the pending href
+    const href = pendingNavigationHref;
+    setPendingNavigationHref(null);
+    router.push(href);
+  };
+
   const requestNewChat = () => {
     // Show feedback reminder popup if there's a conversation with messages
     if (conversationId && messages.length > 0) {
@@ -1970,6 +2101,12 @@ export default function Home() {
     setStatusDone(false);
     setHasResponse(true);
     setLoading(true);
+    // Set streaming flag to track in-progress requests for orphaned data cleanup
+    try {
+      localStorage.setItem(streamingFlagKey, 'true');
+    } catch {
+      // Ignore storage failures.
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -2011,6 +2148,11 @@ export default function Home() {
     if (!messageLabel && isChatRequest) {
       setLoading(false);
       setIsChatOverlayVisible(false);
+      try {
+        localStorage.removeItem(streamingFlagKey);
+      } catch {
+        // Ignore storage failures.
+      }
       return;
     }
     const shouldDeferMessages = detectedIsZendeskTicket && !isChatRequest;
@@ -2917,10 +3059,17 @@ export default function Home() {
     } finally {
       setLoading(false);
       setIsChatOverlayVisible(false);
+      // Clear streaming flag on request completion
+      try {
+        localStorage.removeItem(streamingFlagKey);
+      } catch {
+        // Ignore storage failures.
+      }
     }
   };
 
   return (
+    <NavigationGuardProvider isBlocked={loading} onNavigationBlocked={handleNavigationBlocked}>
     <div className="george-app">
       <div className="george-main-with-sidebar">
         <ConversationList
@@ -4267,6 +4416,33 @@ export default function Home() {
         </div>,
         document.body
       ) : null}
+      {showNavigationWarning ? createPortal(
+        <div
+          className={`george-confirm-overlay${isNavigationWarningClosing ? ' is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          onClick={cancelNavigation}
+        >
+          <div
+            className={`george-confirm-modal${isNavigationWarningClosing ? ' is-closing' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="george-confirm-title">Agent is still running</div>
+            <div className="george-confirm-body">
+              Navigating away will abort the current request. The agent is still processing your question.
+            </div>
+            <div className="george-confirm-actions">
+              <button type="button" className="george-confirm-cancel" onClick={cancelNavigation}>
+                Stay
+              </button>
+              <button type="button" className="george-confirm-accept" onClick={confirmNavigation}>
+                Leave Anyway
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
       {showFeedbackReminder ? createPortal(
         <div
           className={`george-confirm-overlay${isFeedbackReminderClosing ? ' is-closing' : ''}`}
@@ -4304,5 +4480,6 @@ export default function Home() {
         </div>
       </div>
     </div>
+    </NavigationGuardProvider>
   );
 }
