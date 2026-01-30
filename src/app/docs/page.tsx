@@ -97,6 +97,12 @@ const ALLOWED_UPLOAD_EMAILS = [
   'acalvi@dxo.com'
 ];
 
+const ALLOWED_SOFTWARE_UPLOAD_EMAILS = [
+  'hhoubbane@dxo.com',
+  'acalvi@dxo.com',
+  'fbaclet@dxo.com'
+];
+
 export default function DocsPage() {
   const { snapshots: sourcesSnapshot, refresh } = useDocsSnapshots();
   const [openUpdatedFor, setOpenUpdatedFor] = useState<string | null>(null);
@@ -115,6 +121,16 @@ export default function DocsPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  // Excel upload state for Software Compatibility
+  const [isSoftwareUploading, setIsSoftwareUploading] = useState(false);
+  const [softwareUploadResult, setSoftwareUploadResult] = useState<{
+    records: number;
+    recordsCurated: number;
+    updatedAt: string;
+  } | null>(null);
+  const [softwareUploadError, setSoftwareUploadError] = useState<string | null>(null);
+  const softwareFileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch current user email on mount
   useEffect(() => {
@@ -145,6 +161,26 @@ export default function DocsPage() {
       }
     };
     fetchMetadata();
+  }, []);
+
+  // Fetch software compatibility metadata on mount
+  useEffect(() => {
+    const fetchSoftwareMetadata = async () => {
+      try {
+        const response = await fetch('/api/software-metadata');
+        const data = await response.json();
+        if (data.exists) {
+          setSoftwareUploadResult({
+            records: data.records ?? 0,
+            recordsCurated: data.recordsCurated ?? 0,
+            updatedAt: data.updatedAt
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch software metadata:', err);
+      }
+    };
+    fetchSoftwareMetadata();
   }, []);
 
   const titleizeDocId = (value: string) => {
@@ -204,6 +240,52 @@ export default function DocsPage() {
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSoftwareExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length !== 2) {
+      setSoftwareUploadError('Please select exactly 2 Excel files (DxO Software + Nik Collection)');
+      return;
+    }
+
+    setIsSoftwareUploading(true);
+    setSoftwareUploadError(null);
+
+    try {
+      // Get auth token for user identification
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+      }
+
+      const response = await fetch('/api/upload-software-compatibility', {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setSoftwareUploadResult({
+          records: result.records,
+          recordsCurated: result.recordsCurated,
+          updatedAt: result.updatedAt
+        });
+        setSoftwareUploadError(null);
+      } else {
+        setSoftwareUploadError(result.error || 'Upload failed');
+      }
+    } catch (err) {
+      setSoftwareUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsSoftwareUploading(false);
+      if (softwareFileInputRef.current) softwareFileInputRef.current.value = '';
     }
   };
 
@@ -318,9 +400,11 @@ export default function DocsPage() {
                             <strong>
                               {source.name === 'Cameras/Lenses Compatibility' && uploadResult?.updatedAt
                                 ? new Date(uploadResult.updatedAt).toLocaleString()
-                                : snapshot?.lastUpdated
-                                  ? new Date(snapshot.lastUpdated).toLocaleString()
-                                  : '—'}
+                                : source.name === 'Software Compatibility' && softwareUploadResult?.updatedAt
+                                  ? new Date(softwareUploadResult.updatedAt).toLocaleString()
+                                  : snapshot?.lastUpdated
+                                    ? new Date(snapshot.lastUpdated).toLocaleString()
+                                    : '—'}
                             </strong>
                           </div>
                           <div>
@@ -393,6 +477,62 @@ export default function DocsPage() {
                               </div>
                               {uploadError && (
                                 <div className="george-docs-upload-error">{uploadError}</div>
+                              )}
+                            </>
+                          )}
+                          {source.name === 'Software Compatibility' && (
+                            <>
+                              <input
+                                type="file"
+                                ref={softwareFileInputRef}
+                                accept=".xlsx,.xls"
+                                multiple
+                                onChange={handleSoftwareExcelUpload}
+                                style={{ display: 'none' }}
+                              />
+                              <div className="george-docs-upload-row">
+                                <button
+                                  type="button"
+                                  className="george-docs-updated-btn george-docs-upload-btn"
+                                  onClick={() => softwareFileInputRef.current?.click()}
+                                  disabled={isSoftwareUploading || !userEmail || !ALLOWED_SOFTWARE_UPLOAD_EMAILS.includes(userEmail)}
+                                >
+                                  <Upload size={14} />
+                                  {isSoftwareUploading ? 'Uploading...' : 'Update Excel (2 files)'}
+                                </button>
+                                {softwareUploadResult && (
+                                  <div className="george-docs-rows-tooltip-wrapper">
+                                    <button
+                                      type="button"
+                                      className="george-docs-updated-btn george-docs-rows-btn"
+                                    >
+                                      Updated rows
+                                    </button>
+                                    <div className="george-docs-rows-tooltip">
+                                      <table className="george-docs-upload-table">
+                                        <thead>
+                                          <tr>
+                                            <th></th>
+                                            <th>Records</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          <tr>
+                                            <td>Raw</td>
+                                            <td>{softwareUploadResult.records.toLocaleString()}</td>
+                                          </tr>
+                                          <tr>
+                                            <td>Curated</td>
+                                            <td>{softwareUploadResult.recordsCurated.toLocaleString()}</td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {softwareUploadError && (
+                                <div className="george-docs-upload-error">{softwareUploadError}</div>
                               )}
                             </>
                           )}

@@ -31,6 +31,22 @@ function escapeValue(value: unknown): string {
   return `'${str}'`;
 }
 
+function normalizeSheetName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function classifySheetName(name: string): 'cameras' | 'lenses' | null {
+  const norm = normalizeSheetName(name);
+  if (norm.includes('camera')) return 'cameras';
+  if (norm.includes('lens') || norm.includes('lenses')) return 'lenses';
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   // Authenticate user
   const authHeader = request.headers.get('authorization') || '';
@@ -58,9 +74,24 @@ export async function POST(request: NextRequest) {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
-    // 3. Extract cameras (sheet 0) and lenses (sheet 1)
-    const camerasSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const lensesSheet = workbook.Sheets[workbook.SheetNames[1]];
+    // 3. Find cameras and lenses sheets by fuzzy name matching
+    let camerasSheetName: string | null = null;
+    let lensesSheetName: string | null = null;
+
+    for (const sheetName of workbook.SheetNames) {
+      const kind = classifySheetName(sheetName);
+      if (kind === 'cameras' && !camerasSheetName) camerasSheetName = sheetName;
+      if (kind === 'lenses' && !lensesSheetName) lensesSheetName = sheetName;
+    }
+
+    if (!camerasSheetName || !lensesSheetName) {
+      return NextResponse.json({
+        error: 'Could not detect cameras/lenses sheets by name. Use sheet names like "cameras", "planning cameras", "lenses", or "planning lenses".'
+      }, { status: 400 });
+    }
+
+    const camerasSheet = workbook.Sheets[camerasSheetName];
+    const lensesSheet = workbook.Sheets[lensesSheetName];
 
     const camerasData = XLSX.utils.sheet_to_json<Record<string, unknown>>(camerasSheet, { defval: null });
     const lensesData = XLSX.utils.sheet_to_json<Record<string, unknown>>(lensesSheet, { defval: null });
