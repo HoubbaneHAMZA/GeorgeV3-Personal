@@ -53,6 +53,22 @@ const dataSources = [
     format: 'XML → Markdown + YAML',
     details: 'Self-contained technical docs for edge cases',
     storeKey: 'CONFLUENCE'
+  },
+  {
+    name: 'Cameras/Lenses Compatibility',
+    description: 'Camera and lens compatibility data with DxO products',
+    format: 'Excel → SQL Table',
+    details: 'cameras_curated and lenses_curated tables for hardware compatibility queries',
+    storeKey: null,
+    owner: 'Marie-Catherine Fargnoli'
+  },
+  {
+    name: 'Software Compatibility',
+    description: 'Software compatibility records (host apps, plugins, OS)',
+    format: 'Excel → SQL Table',
+    details: 'compatibility_records table for software interoperability queries',
+    storeKey: null,
+    owner: 'Frédéric Baclet'
   }
 ];
 
@@ -197,9 +213,10 @@ export default function DocsPage() {
                   <div className="george-docs-row-meta-title">Data status</div>
                   <div className="george-docs-row-meta-table">
                     {(() => {
-                      const key =
-                        source.storeKey === 'MACROS' ? 'zendesk_macros' : source.storeKey.toLowerCase();
-                      const snapshot = sourcesSnapshot?.[key];
+                      const key = source.storeKey
+                        ? source.storeKey === 'MACROS' ? 'zendesk_macros' : source.storeKey.toLowerCase()
+                        : null;
+                      const snapshot = key ? sourcesSnapshot?.[key] : null;
                       return (
                         <>
                           <div>
@@ -212,17 +229,19 @@ export default function DocsPage() {
                           </div>
                           <div>
                             <span>Owner</span>
-                            <strong>Auto</strong>
+                            <strong>{source.owner || 'Auto'}</strong>
                           </div>
-                          <button
-                            type="button"
-                            className="george-docs-updated-btn"
-                            onClick={() =>
-                              setOpenUpdatedFor((prev) => (prev === key ? null : key))
-                            }
-                          >
-                            Updated files ({snapshot?.updatedFiles?.length ?? 0})
-                          </button>
+                          {key && (
+                            <button
+                              type="button"
+                              className="george-docs-updated-btn"
+                              onClick={() =>
+                                setOpenUpdatedFor((prev) => (prev === key ? null : key))
+                              }
+                            >
+                              Updated files ({snapshot?.updatedFiles?.length ?? 0})
+                            </button>
+                          )}
                         </>
                       );
                     })()}
@@ -305,6 +324,27 @@ export default function DocsPage() {
           <p className="george-docs-note">
             Each vector store is searched with metadata filters (software, OS, version, language, category) for precise
             retrieval. The tool returns top-3 excerpts (no separate summarizer model).
+          </p>
+        </section>
+
+        <section className="george-docs-section">
+          <h3>SQL Tools</h3>
+          <div className="george-docs-table">
+            <div className="george-docs-table-head">
+              <span>Tool Name</span>
+              <span>Description</span>
+            </div>
+            <div className="george-docs-table-row">
+              <code>cameras_lenses_compatibility_sql_tool</code>
+              <span>Queries cameras_curated and lenses_curated tables for camera/lens compatibility with DxO products</span>
+            </div>
+            <div className="george-docs-table-row">
+              <code>software_compatibility_sql_tool</code>
+              <span>Queries compatibility_records table for software compatibility (host apps, plugins, OS)</span>
+            </div>
+          </div>
+          <p className="george-docs-note">
+            SQL tools use read-only SELECT queries with strict validation, row limits, and parameterized queries for safety.
           </p>
         </section>
 
