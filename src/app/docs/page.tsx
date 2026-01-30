@@ -58,7 +58,7 @@ const dataSources = [
   {
     name: 'Cameras/Lenses Compatibility',
     description: 'Camera and lens compatibility data with DxO products',
-    format: 'Excel → SQL Table',
+    format: 'Excel → SQL Table (updated excel file at each CLSS)',
     details: 'cameras_curated and lenses_curated tables for hardware compatibility queries',
     storeKey: null,
     owner: 'Marie-Catherine Fargnoli'
@@ -66,7 +66,7 @@ const dataSources = [
   {
     name: 'Software Compatibility',
     description: 'Software compatibility records (host apps, plugins, OS)',
-    format: 'Excel → SQL Table',
+    format: 'Excel → SQL Table (new version of the table at each software release)',
     details: 'compatibility_records table for software interoperability queries',
     storeKey: null,
     owner: 'Frédéric Baclet'
@@ -91,6 +91,12 @@ const filters = [
   { name: 'language', values: 'en, fr, de' }
 ];
 
+const ALLOWED_UPLOAD_EMAILS = [
+  'mcfargnoli@dxo.com',
+  'hhoubbane@dxo.com',
+  'acalvi@dxo.com'
+];
+
 export default function DocsPage() {
   const { snapshots: sourcesSnapshot, refresh } = useDocsSnapshots();
   const [openUpdatedFor, setOpenUpdatedFor] = useState<string | null>(null);
@@ -108,6 +114,16 @@ export default function DocsPage() {
   } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  // Fetch current user email on mount
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getSession();
+      setUserEmail(data.session?.user?.email ?? null);
+    };
+    fetchUser();
+  }, []);
 
   // Fetch cameras/lenses metadata on mount
   useEffect(() => {
@@ -336,7 +352,7 @@ export default function DocsPage() {
                                   type="button"
                                   className="george-docs-updated-btn george-docs-upload-btn"
                                   onClick={() => fileInputRef.current?.click()}
-                                  disabled={isUploading}
+                                  disabled={isUploading || !userEmail || !ALLOWED_UPLOAD_EMAILS.includes(userEmail)}
                                 >
                                   <Upload size={14} />
                                   {isUploading ? 'Uploading...' : 'Update Excel'}
