@@ -430,7 +430,7 @@ html, body {
 }
 
 .george-docs-row-meta {
-  flex: 0 0 220px;
+  flex: 0 0 300px;
   border-left: 1px solid var(--border);
   padding-left: 16px;
 }
@@ -476,6 +476,115 @@ html, body {
 
 .george-docs-updated-btn:hover {
   background: var(--surface);
+}
+
+.george-docs-upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.george-docs-upload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.george-docs-upload-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.george-docs-upload-error {
+  font-size: 0.75rem;
+  color: #dc2626;
+  padding: 4px 0;
+}
+
+.george-docs-rows-tooltip-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.george-docs-rows-btn {
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.3);
+}
+
+.george-docs-rows-btn:hover {
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.george-docs-rows-tooltip {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  background: #fff;
+  border: 2px solid #16a34a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+.george-docs-rows-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 24px;
+  border: 8px solid transparent;
+  border-bottom-color: #16a34a;
+}
+
+.george-docs-rows-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 26px;
+  border: 6px solid transparent;
+  border-bottom-color: #fff;
+}
+
+.george-docs-rows-tooltip-wrapper:hover .george-docs-rows-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.george-docs-upload-table {
+  font-size: 0.75rem;
+  border-collapse: collapse;
+  color: #166534;
+}
+
+.george-docs-upload-table th,
+.george-docs-upload-table td {
+  padding: 6px 14px;
+  text-align: right;
+  border: 1px solid #bbf7d0;
+}
+
+.george-docs-upload-table th {
+  font-weight: 600;
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.george-docs-upload-table td:first-child,
+.george-docs-upload-table th:first-child {
+  text-align: left;
+}
+
+.george-docs-upload-table td:first-child {
+  font-weight: 500;
+}
+
+.george-docs-upload-table td:first-child {
+  text-align: left;
+  font-weight: 500;
 }
 
 .george-docs-updated-list {

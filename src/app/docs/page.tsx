@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { RefreshCw, BrainCircuit } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { RefreshCw, BrainCircuit, Upload } from 'lucide-react';
 import { useDocsSnapshots } from '@/hooks/useDocsSnapshots';
+import { supabase } from '@/lib/supabase/client';
 
 const dataSources = [
   {
@@ -96,6 +97,40 @@ export default function DocsPage() {
   const [updatedModalClosing, setUpdatedModalClosing] = useState(false);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
+  // Excel upload state for Cameras/Lenses
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{
+    cameras: number;
+    lenses: number;
+    camerasCurated: number;
+    lensesCurated: number;
+    updatedAt: string;
+  } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch cameras/lenses metadata on mount
+  useEffect(() => {
+    const fetchMetadata = async () => {
+      try {
+        const response = await fetch('/api/cameras-lenses-metadata');
+        const data = await response.json();
+        if (data.exists) {
+          setUploadResult({
+            cameras: data.cameras,
+            lenses: data.lenses,
+            camerasCurated: data.camerasCurated,
+            lensesCurated: data.lensesCurated,
+            updatedAt: data.updatedAt
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch cameras/lenses metadata:', err);
+      }
+    };
+    fetchMetadata();
+  }, []);
+
   const titleizeDocId = (value: string) => {
     if (!value) return 'Unknown doc';
     const stripped = value.replace(/\.[a-z0-9]+$/i, '');
@@ -111,6 +146,49 @@ export default function DocsPage() {
     setIsManualRefreshing(true);
     await refresh();
     setIsManualRefreshing(false);
+  };
+
+  const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      // Get auth token for user identification
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload-cameras-lenses', {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setUploadResult({
+          cameras: result.cameras,
+          lenses: result.lenses,
+          camerasCurated: result.camerasCurated,
+          lensesCurated: result.lensesCurated,
+          updatedAt: result.updatedAt
+        });
+        setUploadError(null);
+      } else {
+        setUploadError(result.error || 'Upload failed');
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   return (
@@ -222,9 +300,11 @@ export default function DocsPage() {
                           <div>
                             <span>Last updated</span>
                             <strong>
-                              {snapshot?.lastUpdated
-                                ? new Date(snapshot.lastUpdated).toLocaleString()
-                                : '—'}
+                              {source.name === 'Cameras/Lenses Compatibility' && uploadResult?.updatedAt
+                                ? new Date(uploadResult.updatedAt).toLocaleString()
+                                : snapshot?.lastUpdated
+                                  ? new Date(snapshot.lastUpdated).toLocaleString()
+                                  : '—'}
                             </strong>
                           </div>
                           <div>
@@ -241,6 +321,64 @@ export default function DocsPage() {
                             >
                               Updated files ({snapshot?.updatedFiles?.length ?? 0})
                             </button>
+                          )}
+                          {source.name === 'Cameras/Lenses Compatibility' && (
+                            <>
+                              <input
+                                type="file"
+                                ref={fileInputRef}
+                                accept=".xlsx,.xls"
+                                onChange={handleExcelUpload}
+                                style={{ display: 'none' }}
+                              />
+                              <div className="george-docs-upload-row">
+                                <button
+                                  type="button"
+                                  className="george-docs-updated-btn george-docs-upload-btn"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  disabled={isUploading}
+                                >
+                                  <Upload size={14} />
+                                  {isUploading ? 'Uploading...' : 'Update Excel'}
+                                </button>
+                                {uploadResult && (
+                                  <div className="george-docs-rows-tooltip-wrapper">
+                                    <button
+                                      type="button"
+                                      className="george-docs-updated-btn george-docs-rows-btn"
+                                    >
+                                      Updated rows
+                                    </button>
+                                    <div className="george-docs-rows-tooltip">
+                                      <table className="george-docs-upload-table">
+                                        <thead>
+                                          <tr>
+                                            <th></th>
+                                            <th>Cameras</th>
+                                            <th>Lenses</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          <tr>
+                                            <td>Raw</td>
+                                            <td>{uploadResult.cameras}</td>
+                                            <td>{uploadResult.lenses}</td>
+                                          </tr>
+                                          <tr>
+                                            <td>Curated</td>
+                                            <td>{uploadResult.camerasCurated}</td>
+                                            <td>{uploadResult.lensesCurated}</td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {uploadError && (
+                                <div className="george-docs-upload-error">{uploadError}</div>
+                              )}
+                            </>
                           )}
                         </>
                       );
