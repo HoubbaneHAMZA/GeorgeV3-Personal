@@ -62,4 +62,7 @@ data/Attachments/
 #md files
 *.md
 
+# Large files (exceeding GitHub's 100MB limit)
+George Demo.mov
+remotion/node_modules/.remotion/chrome-headless-shell/
 
