@@ -749,8 +749,8 @@ export default function Home() {
   const attachmentsDisabled = loading || isTicketMode || attachmentsRemaining === 0;
   const showInput = !hasResponse && !isChatMode;
   const showGeneratedBy = statusDone;
-  const showInitialLoader = steps.started && !statusDone && !sessionId && !initialStreamStarted;
-  const showTranscript = messages.length > 0 && (statusDone || sessionId || initialStreamStarted);
+  const showInitialLoader = steps.started && !statusDone && !initialStreamStarted;
+  const showTranscript = messages.length > 0 && (statusDone || initialStreamStarted);
 
   // Warn user before leaving page during active agent run
   useEffect(() => {
@@ -2171,7 +2171,7 @@ export default function Home() {
       }
     }
     setInput('');
-    if (isChatRequest && attachments.length > 0) {
+    if (attachments.length > 0) {
       setAttachments([]);
       setAttachmentError('');
       setIsDragActive(false);
