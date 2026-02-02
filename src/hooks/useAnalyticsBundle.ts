@@ -20,9 +20,10 @@ type MessageOverviewData = {
   avg_response_time: number;
 };
 
-type MessageTrendData = {
+export type MessageTrendData = {
   date: string;
   total: number;
+  feedback_count: number;
   unusable: number;
   problematic: number;
   usable: number;
@@ -35,6 +36,17 @@ type TagData = {
   count: number;
   unusable: number;
   problematic: number;
+};
+
+// Message category data (for message view with categories from conversations)
+export type MessageCategoryData = {
+  category: string;
+  count: number;
+  perfect: number;
+  good: number;
+  usable: number;
+  problematic: number;
+  unusable: number;
 };
 
 type FeedbackItem = {
@@ -52,6 +64,7 @@ type MessageAnalyticsBundle = {
   overview: MessageOverviewData;
   trends: MessageTrendData[];
   tags: TagData[];
+  categories: MessageCategoryData[];
   feedback_list: {
     interactions: FeedbackItem[];
     page: number;
@@ -79,7 +92,7 @@ type ConversationTrendData = {
   not_solved: number;
 };
 
-type CategoryData = {
+export type CategoryData = {
   category: string;
   count: number;
   solved: number;
@@ -128,8 +141,10 @@ type ConversationAnalyticsBundleWithCost = ConversationAnalyticsBundle & {
 
 export type AnalyticsBundle = MessageAnalyticsBundleWithCost | ConversationAnalyticsBundleWithCost;
 
-export function isConversationBundle(bundle: AnalyticsBundle): bundle is ConversationAnalyticsBundle {
-  return 'categories' in bundle;
+export function isConversationBundle(bundle: AnalyticsBundle): bundle is ConversationAnalyticsBundleWithCost {
+  // Both message and conversation bundles now have categories
+  // Distinguish by checking for conversation-specific overview fields
+  return 'overview' in bundle && 'solved_rate' in bundle.overview;
 }
 
 type UseAnalyticsBundleParams = {

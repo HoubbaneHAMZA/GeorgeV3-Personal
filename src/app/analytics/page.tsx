@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import AnalyticsOverview from '@/components/analytics/AnalyticsOverview';
 import AnalyticsTrends from '@/components/analytics/AnalyticsTrends';
 import AnalyticsTags from '@/components/analytics/AnalyticsTags';
-import AnalyticsCategories from '@/components/analytics/AnalyticsCategories';
+import AnalyticsCategoryBreakdown from '@/components/analytics/AnalyticsCategoryBreakdown';
 import AnalyticsFeedbackList from '@/components/analytics/AnalyticsFeedbackList';
 import { Download, Calendar, ChevronDown, User, Globe, MessageSquare, MessagesSquare, RefreshCw, BarChart3, Layers, DollarSign, ThumbsUp } from 'lucide-react';
 import { useAnalyticsBundle, isConversationBundle, type AnalyticsBundle } from '@/hooks/useAnalyticsBundle';
@@ -404,21 +404,25 @@ export default function AnalyticsPage() {
               {/* Only show tags/categories and feedback list when in feedback mode */}
               {metricType === 'feedback' && (
                 <>
-                  <div className="george-analytics-row">
-                    {apiView === 'conversation' ? (
-                      <AnalyticsCategories
-                        data={conversationBundle?.categories ?? []}
-                        isLoading={bundleLoading}
-                        error={bundleError}
-                      />
-                    ) : (
-                      <AnalyticsTags
-                        data={messageBundle?.tags ?? []}
-                        isLoading={bundleLoading}
-                        error={bundleError}
-                      />
-                    )}
-                  </div>
+                  {/* Rating by Category - shown in both views */}
+                  <AnalyticsCategoryBreakdown
+                    data={apiView === 'conversation'
+                      ? conversationBundle?.categories ?? []
+                      : messageBundle?.categories ?? []
+                    }
+                    isLoading={bundleLoading}
+                    error={bundleError}
+                    view={apiView}
+                  />
+
+                  {/* Top Feedback Tags - only in message view */}
+                  {apiView === 'message' && (
+                    <AnalyticsTags
+                      data={messageBundle?.tags ?? []}
+                      isLoading={bundleLoading}
+                      error={bundleError}
+                    />
+                  )}
 
                   <AnalyticsFeedbackList
                     data={
