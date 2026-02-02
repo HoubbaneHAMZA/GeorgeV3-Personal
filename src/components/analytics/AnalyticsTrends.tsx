@@ -87,7 +87,7 @@ function UsageTooltip({ active, payload, label, view }: {
         padding: '8px 12px',
         fontSize: '12px'
       }}>
-        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(label || '')}</p>
+        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(String(label || ''))}</p>
         <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
           Total Cost: <span style={{ color: '#2563eb', fontWeight: 600 }}>{formatCost(data.total_cost)}</span>
         </p>
@@ -106,7 +106,7 @@ function UsageTooltip({ active, payload, label, view }: {
         padding: '8px 12px',
         fontSize: '12px'
       }}>
-        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(label || '')}</p>
+        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(String(label || ''))}</p>
         <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
           Avg Cost: <span style={{ color: '#2563eb', fontWeight: 600 }}>{formatCost(avgCost)}</span>/conversation
         </p>
@@ -128,7 +128,7 @@ function UsageTooltip({ active, payload, label, view }: {
       padding: '8px 12px',
       fontSize: '12px'
     }}>
-      <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(label || '')}</p>
+      <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(String(label || ''))}</p>
       <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
         Avg Cost: <span style={{ color: '#2563eb', fontWeight: 600 }}>{formatCost(avgCost)}</span>/message
       </p>
@@ -164,7 +164,7 @@ function VolumeTooltip({ active, payload, label }: {
       padding: '8px 12px',
       fontSize: '12px'
     }}>
-      <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(label || '')}</p>
+      <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(String(label || ''))}</p>
       <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
         Messages: <span style={{ color: '#94a3b8', fontWeight: 600 }}>{messages}</span>
       </p>
@@ -406,7 +406,7 @@ export default function AnalyticsTrends({
                         padding: '8px 12px',
                         fontSize: '12px'
                       }}>
-                        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(label || '')}</p>
+                        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(String(label || ''))}</p>
                         <p style={{ margin: '4px 0 0', color: 'var(--muted)' }}>
                           Conversations: <span style={{ color: '#94a3b8', fontWeight: 600 }}>{convs}</span>
                         </p>
@@ -503,7 +503,7 @@ export default function AnalyticsTrends({
                         padding: '8px 12px',
                         fontSize: '12px'
                       }}>
-                        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(label || '')}</p>
+                        <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(String(label || ''))}</p>
                         <p style={{ margin: '4px 0 0', color: '#22c55e' }}>Solved: {d.solved} ({d.solvedPct?.toFixed(1)}%)</p>
                         <p style={{ margin: '2px 0 0', color: '#eab308' }}>Partial: {d.partially_solved} ({d.partialPct?.toFixed(1)}%)</p>
                         <p style={{ margin: '2px 0 0', color: '#ef4444' }}>Not Solved: {d.not_solved} ({d.notSolvedPct?.toFixed(1)}%)</p>
@@ -699,7 +699,7 @@ export default function AnalyticsTrends({
                       padding: '8px 12px',
                       fontSize: '12px'
                     }}>
-                      <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(label || '')}</p>
+                      <p style={{ margin: 0, fontWeight: 600 }}>{formatDate(String(label || ''))}</p>
                       <p style={{ margin: '4px 0 0', color: '#0d9488' }}>Perfect: {d.perfect} ({d.perfectPct?.toFixed(1)}%)</p>
                       <p style={{ margin: '2px 0 0', color: '#22c55e' }}>Good: {d.good} ({d.goodPct?.toFixed(1)}%)</p>
                       <p style={{ margin: '2px 0 0', color: '#eab308' }}>Usable: {d.usable} ({d.usablePct?.toFixed(1)}%)</p>

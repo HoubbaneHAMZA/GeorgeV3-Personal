@@ -131,11 +131,11 @@ export type CostTrendData = {
 };
 
 // Extended bundle type that includes cost trends
-type MessageAnalyticsBundleWithCost = MessageAnalyticsBundle & {
+export type MessageAnalyticsBundleWithCost = MessageAnalyticsBundle & {
   costTrends?: CostTrendData[];
 };
 
-type ConversationAnalyticsBundleWithCost = ConversationAnalyticsBundle & {
+export type ConversationAnalyticsBundleWithCost = ConversationAnalyticsBundle & {
   costTrends?: CostTrendData[];
 };
 

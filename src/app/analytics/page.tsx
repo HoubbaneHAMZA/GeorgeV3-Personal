@@ -8,7 +8,7 @@ import AnalyticsTags from '@/components/analytics/AnalyticsTags';
 import AnalyticsCategoryBreakdown from '@/components/analytics/AnalyticsCategoryBreakdown';
 import AnalyticsFeedbackList from '@/components/analytics/AnalyticsFeedbackList';
 import { Download, Calendar, ChevronDown, User, Globe, MessageSquare, MessagesSquare, RefreshCw, BarChart3, Layers, DollarSign, ThumbsUp } from 'lucide-react';
-import { useAnalyticsBundle, isConversationBundle, type AnalyticsBundle } from '@/hooks/useAnalyticsBundle';
+import { useAnalyticsBundle, isConversationBundle, type MessageAnalyticsBundleWithCost, type ConversationAnalyticsBundleWithCost } from '@/hooks/useAnalyticsBundle';
 import { useAccessToken } from '@/hooks/useAccessToken';
 
 type AnalyticsView = 'message' | 'conversation' | 'all';
@@ -20,9 +20,6 @@ type DateRange = {
   to: string;
   label: string;
 };
-
-type MessageAnalyticsBundle = Extract<AnalyticsBundle, { tags: unknown }>;
-type ConversationAnalyticsBundle = Extract<AnalyticsBundle, { categories: unknown }>;
 
 const DATE_PRESETS: { label: string; getDates: () => { from: string; to: string } }[] = [
   {
@@ -221,8 +218,8 @@ export default function AnalyticsPage() {
 
   // Determine which data to show based on view
   const isConversation = apiView === 'conversation' && bundle && isConversationBundle(bundle);
-  const conversationBundle = isConversation ? bundle as ConversationAnalyticsBundle : null;
-  const messageBundle = !isConversation && bundle ? bundle as MessageAnalyticsBundle : null;
+  const conversationBundle = isConversation ? bundle as ConversationAnalyticsBundleWithCost : null;
+  const messageBundle = !isConversation && bundle ? bundle as MessageAnalyticsBundleWithCost : null;
 
   return (
     <main className="george-analytics">
