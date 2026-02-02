@@ -70,6 +70,14 @@ const dataSources = [
     details: 'compatibility_records table for software interoperability queries',
     storeKey: null,
     owner: 'Frédéric Baclet'
+  },
+  {
+    name: 'Denoising Technologies',
+    description: 'Denoising technology compatibility with DxO products',
+    format: 'Excel → SQL Table',
+    details: 'denoising_technos_compatibility table for denoising tech queries (PRIME, DeepPRIME, DeepPRIME XD, etc.)',
+    storeKey: null,
+    owner: 'Frédéric Baclet'
   }
 ];
 
@@ -103,6 +111,12 @@ const ALLOWED_SOFTWARE_UPLOAD_EMAILS = [
   'fbaclet@dxo.com'
 ];
 
+const ALLOWED_DENOISING_UPLOAD_EMAILS = [
+  'hhoubbane@dxo.com',
+  'acalvi@dxo.com',
+  'fbaclet@dxo.com'
+];
+
 export default function DocsPage() {
   const { snapshots: sourcesSnapshot, refresh } = useDocsSnapshots();
   const [openUpdatedFor, setOpenUpdatedFor] = useState<string | null>(null);
@@ -131,6 +145,15 @@ export default function DocsPage() {
   } | null>(null);
   const [softwareUploadError, setSoftwareUploadError] = useState<string | null>(null);
   const softwareFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Excel upload state for Denoising Technologies
+  const [isDenoisingUploading, setIsDenoisingUploading] = useState(false);
+  const [denoisingUploadResult, setDenoisingUploadResult] = useState<{
+    records: number;
+    updatedAt: string;
+  } | null>(null);
+  const [denoisingUploadError, setDenoisingUploadError] = useState<string | null>(null);
+  const denoisingFileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch current user email on mount
   useEffect(() => {
@@ -181,6 +204,25 @@ export default function DocsPage() {
       }
     };
     fetchSoftwareMetadata();
+  }, []);
+
+  // Fetch denoising technologies metadata on mount
+  useEffect(() => {
+    const fetchDenoisingMetadata = async () => {
+      try {
+        const response = await fetch('/api/denoising-metadata');
+        const data = await response.json();
+        if (data.exists) {
+          setDenoisingUploadResult({
+            records: data.records ?? 0,
+            updatedAt: data.updatedAt
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch denoising metadata:', err);
+      }
+    };
+    fetchDenoisingMetadata();
   }, []);
 
   const titleizeDocId = (value: string) => {
@@ -286,6 +328,46 @@ export default function DocsPage() {
     } finally {
       setIsSoftwareUploading(false);
       if (softwareFileInputRef.current) softwareFileInputRef.current.value = '';
+    }
+  };
+
+  const handleDenoisingExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsDenoisingUploading(true);
+    setDenoisingUploadError(null);
+
+    try {
+      // Get auth token for user identification
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload-denoising-technos', {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setDenoisingUploadResult({
+          records: result.records,
+          updatedAt: result.updatedAt
+        });
+        setDenoisingUploadError(null);
+      } else {
+        setDenoisingUploadError(result.error || 'Upload failed');
+      }
+    } catch (err) {
+      setDenoisingUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsDenoisingUploading(false);
+      if (denoisingFileInputRef.current) denoisingFileInputRef.current.value = '';
     }
   };
 
@@ -402,9 +484,11 @@ export default function DocsPage() {
                                 ? new Date(uploadResult.updatedAt).toLocaleString()
                                 : source.name === 'Software Compatibility' && softwareUploadResult?.updatedAt
                                   ? new Date(softwareUploadResult.updatedAt).toLocaleString()
-                                  : snapshot?.lastUpdated
-                                    ? new Date(snapshot.lastUpdated).toLocaleString()
-                                    : '—'}
+                                  : source.name === 'Denoising Technologies' && denoisingUploadResult?.updatedAt
+                                    ? new Date(denoisingUploadResult.updatedAt).toLocaleString()
+                                    : snapshot?.lastUpdated
+                                      ? new Date(snapshot.lastUpdated).toLocaleString()
+                                      : '—'}
                             </strong>
                           </div>
                           <div>
@@ -536,6 +620,57 @@ export default function DocsPage() {
                               )}
                             </>
                           )}
+                          {source.name === 'Denoising Technologies' && (
+                            <>
+                              <input
+                                type="file"
+                                ref={denoisingFileInputRef}
+                                accept=".xlsx,.xls"
+                                onChange={handleDenoisingExcelUpload}
+                                style={{ display: 'none' }}
+                              />
+                              <div className="george-docs-upload-row">
+                                <button
+                                  type="button"
+                                  className="george-docs-updated-btn george-docs-upload-btn"
+                                  onClick={() => denoisingFileInputRef.current?.click()}
+                                  disabled={isDenoisingUploading || !userEmail || !ALLOWED_DENOISING_UPLOAD_EMAILS.includes(userEmail)}
+                                >
+                                  <Upload size={14} />
+                                  {isDenoisingUploading ? 'Uploading...' : 'Update Excel'}
+                                </button>
+                                {denoisingUploadResult && (
+                                  <div className="george-docs-rows-tooltip-wrapper">
+                                    <button
+                                      type="button"
+                                      className="george-docs-updated-btn george-docs-rows-btn"
+                                    >
+                                      Updated rows
+                                    </button>
+                                    <div className="george-docs-rows-tooltip">
+                                      <table className="george-docs-upload-table">
+                                        <thead>
+                                          <tr>
+                                            <th></th>
+                                            <th>Records</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          <tr>
+                                            <td>Total</td>
+                                            <td>{denoisingUploadResult.records.toLocaleString()}</td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {denoisingUploadError && (
+                                <div className="george-docs-upload-error">{denoisingUploadError}</div>
+                              )}
+                            </>
+                          )}
                         </>
                       );
                     })()}
@@ -635,6 +770,10 @@ export default function DocsPage() {
             <div className="george-docs-table-row">
               <code>software_compatibility_sql_tool</code>
               <span>Queries compatibility_records table for software compatibility (host apps, plugins, OS)</span>
+            </div>
+            <div className="george-docs-table-row">
+              <code>denoising_tech_sql_tool</code>
+              <span>Queries denoising_technos_compatibility table for denoising technology support (PRIME, DeepPRIME, DeepPRIME XD)</span>
             </div>
           </div>
           <p className="george-docs-note">
