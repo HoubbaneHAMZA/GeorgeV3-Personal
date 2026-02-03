@@ -1870,8 +1870,20 @@ export default function Home() {
       // Ignore storage failures.
     }
   };
-  const handleAgentInterrupted = (message: string) => {
-    resetConversation();
+  const handleAgentInterrupted = (message: string, options?: { preserveConversation?: boolean }) => {
+    const preserveConversation = Boolean(options?.preserveConversation);
+    if (preserveConversation) {
+      removeLastExchange();
+      setLoading(false);
+      setStatusSteps([]);
+      setActiveStatusId(null);
+      setStatusDone(true);
+      setHasResponse(true);
+      setSteps((prev) => ({ ...prev, started: false, agentThinking: undefined }));
+      setIsChatOverlayVisible(false);
+    } else {
+      resetConversation();
+    }
     setAgentInterrupted(message);
     setIsAgentInterruptedClosing(false);
   };
@@ -1892,6 +1904,14 @@ export default function Home() {
       if (prev.length < 2) return prev;
       const last = prev[prev.length - 1];
       if (last.role !== 'assistant' || last.content.trim()) return prev;
+      // If it's the first exchange, keep messages but mark assistant response as interrupted
+      if (prev.length === 2) {
+        return prev.map((msg, i) =>
+          i === prev.length - 1
+            ? { ...msg, content: '*Request was interrupted. You can ask again.*' }
+            : msg
+        );
+      }
       return prev.slice(0, -2);
     });
   };
@@ -1932,12 +1952,17 @@ export default function Home() {
       // Ignore storage failures.
     }
     if (runModeRef.current === 'initial') {
-      handleAgentInterrupted('Agent was interrupted. Please ask your question again.');
+      const hasCompletedResponse = messages.some(
+        (msg) => msg.role === 'assistant' && msg.content.trim().length > 0
+      );
+      const shouldPreserve = Boolean(conversationId) || Boolean(sessionId) || hasCompletedResponse;
+      handleAgentInterrupted('Agent was interrupted. Please ask your question again.', { preserveConversation: shouldPreserve });
     } else if (runModeRef.current === 'chat') {
       removeLastExchange();
       setStatusSteps([]);
       setActiveStatusId(null);
-      setStatusDone(false);
+      setStatusDone(true);
+      setHasResponse(true);
       setSteps((prev) => ({ ...prev, started: false, agentThinking: undefined }));
       setIsChatOverlayVisible(false);
     }
@@ -1985,12 +2010,17 @@ export default function Home() {
       // Ignore storage failures.
     }
     if (runModeRef.current === 'initial') {
-      handleAgentInterrupted('Agent was interrupted. Please ask your question again.');
+      const hasCompletedResponse = messages.some(
+        (msg) => msg.role === 'assistant' && msg.content.trim().length > 0
+      );
+      const shouldPreserve = Boolean(conversationId) || Boolean(sessionId) || hasCompletedResponse;
+      handleAgentInterrupted('Agent was interrupted. Please ask your question again.', { preserveConversation: shouldPreserve });
     } else if (runModeRef.current === 'chat') {
       removeLastExchange();
       setStatusSteps([]);
       setActiveStatusId(null);
-      setStatusDone(false);
+      setStatusDone(true);
+      setHasResponse(true);
       setSteps((prev) => ({ ...prev, started: false, agentThinking: undefined }));
       setIsChatOverlayVisible(false);
     }
@@ -2212,6 +2242,11 @@ export default function Home() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    // Prevent submission if input is empty (after trimming)
+    if (!input.trim()) {
+      return;
+    }
 
     // Check for commands (input starting with /)
     const trimmedInputForCommand = input.trim().toLowerCase();
@@ -3342,13 +3377,20 @@ export default function Home() {
                     <span className="george-ticket-tag">{ticketTag}</span>
                   )}
                   <div style={{ position: 'relative', flex: ticketMatch && !ticketTag ? '0 0 auto' : 1 }}>
-                    <input
-                      type="text"
+                    <textarea
                       className={`george-input${ticketMatch && !ticketTag ? ' george-input-as-tag' : ''}`}
                       placeholder={ticketTag ? "" : "Ask a question or enter #ticket_id"}
                       style={ticketInputStyle}
                       value={inputAfterTag}
+                      rows={1}
                       onKeyDown={(event) => {
+                        // Enter without shift submits, Shift+Enter adds line break
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault();
+                          const form = event.currentTarget.closest('form');
+                          if (form) form.requestSubmit();
+                          return;
+                        }
                         // When input looks like a tag (ticketMatch but no ticketTag), handle backspace to delete from the ticket number
                         if (event.key === 'Backspace' && ticketMatch && !ticketTag && inputAfterTag.length > 0) {
                           // Allow normal backspace behavior in the styled input
@@ -3363,6 +3405,9 @@ export default function Home() {
                       onChange={(event) => {
                         const newValue = event.target.value;
                         setTicketError('');
+                        // Auto-resize textarea
+                        event.target.style.height = 'auto';
+                        event.target.style.height = `${event.target.scrollHeight}px`;
                         // If we have a ticket tag, keep it and append what the user types (including instructions).
                         if (ticketTag) {
                           setInput(ticketTag + newValue);
@@ -3459,7 +3504,7 @@ export default function Home() {
                   </div>
                   </div>
                 </div>
-                <button type="submit" className="george-input-send" disabled={loading} aria-label="Send">
+                <button type="submit" className="george-input-send" disabled={loading || !input.trim()} aria-label="Send">
                   <SendHorizontal size={20} aria-hidden="true" />
                 </button>
                 </form>
@@ -4178,11 +4223,11 @@ export default function Home() {
                           {commandTag}
                         </span>
                       )}
-                      <input
-                        type="text"
+                      <textarea
                         className="george-input"
                         placeholder={commandTag ? "" : "Send a message or type /update"}
                         value={inputAfterTag}
+                        rows={1}
                         onKeyDown={(event) => {
                           // Handle command suggestions navigation
                           if (commandSuggestions.length > 0) {
@@ -4213,6 +4258,13 @@ export default function Home() {
                               return;
                             }
                           }
+                          // Enter without shift submits, Shift+Enter adds line break
+                          if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault();
+                            const form = event.currentTarget.closest('form');
+                            if (form) form.requestSubmit();
+                            return;
+                          }
                           if (event.key === 'Backspace' && commandTag && inputAfterTag.length === 0) {
                             const nextCmd = commandTag.length > 1 ? commandTag.slice(0, -1) : '';
                             setInput(nextCmd);
@@ -4220,6 +4272,9 @@ export default function Home() {
                         }}
                         onChange={(event) => {
                           const newValue = event.target.value;
+                          // Auto-resize textarea
+                          event.target.style.height = 'auto';
+                          event.target.style.height = `${event.target.scrollHeight}px`;
                           if (commandTag) {
                             setInput(commandTag + newValue);
                           } else {
@@ -4268,7 +4323,7 @@ export default function Home() {
                     >
                       <span aria-hidden="true">+</span>
                     </button>
-                    <button type="submit" className="george-input-send" disabled={loading} aria-label="Send">
+                    <button type="submit" className="george-input-send" disabled={loading || !input.trim()} aria-label="Send">
                       <SendHorizontal size={20} aria-hidden="true" />
                     </button>
                   </form>

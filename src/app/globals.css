@@ -3781,6 +3781,10 @@ html, body {
   font-family: 'Geist Mono', 'Geist Mono Fallback', monospace;
   min-width: 0;
   width: 100%;
+  resize: none;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.5;
 }
 
 .george-input::placeholder {
