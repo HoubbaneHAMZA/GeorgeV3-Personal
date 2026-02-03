@@ -4210,6 +4210,31 @@ export default function Home() {
                               return seen.size;
                             })();
                             const isCollapsed = message.collapsedTools?.[label] ?? false;
+                            // Build summary based on tool type
+                            const toolSummary = (() => {
+                              const callsText = `${group.length} call${group.length !== 1 ? 's' : ''}`;
+                              // CheckUserHistory: only show calls (no sources)
+                              if (label === 'CheckUserHistory') {
+                                return callsText;
+                              }
+                              // GetTicketConversation: show calls + unique ticket count
+                              if (label === 'GetTicketConversation') {
+                                const ticketIds = new Set<string>();
+                                for (const q of group) {
+                                  // Extract ticket_id from query like {"ticket_id":431520}
+                                  const match = q.query.match(/"ticket_id"\s*:\s*(\d+)/);
+                                  if (match) ticketIds.add(match[1]);
+                                }
+                                const ticketCount = ticketIds.size;
+                                return `${callsText} • ${ticketCount} ticket${ticketCount !== 1 ? 's' : ''}`;
+                              }
+                              // SQL tools: show rows
+                              if (isSqlTool) {
+                                return `${callsText} • ${uniqueRows} row${uniqueRows !== 1 ? 's' : ''}`;
+                              }
+                              // Default: show sources
+                              return `${callsText} • ${totalSources} source${totalSources !== 1 ? 's' : ''}`;
+                            })();
                             return (
                               <div key={label} className="george-trace-tool">
                                 <button
@@ -4219,7 +4244,7 @@ export default function Home() {
                                 >
                                   <span className="george-trace-tool-name">{label}</span>
                                   <span className="george-trace-tool-summary">
-                                    {group.length} call{group.length !== 1 ? 's' : ''} • {isSqlTool ? `${uniqueRows} row${uniqueRows !== 1 ? 's' : ''}` : `${totalSources} source${totalSources !== 1 ? 's' : ''}`}
+                                    {toolSummary}
                                   </span>
                                   <span className={`george-trace-tool-chevron${isCollapsed ? '' : ' is-open'}`} aria-hidden="true">⌄</span>
                                 </button>
