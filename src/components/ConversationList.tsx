@@ -15,6 +15,8 @@ export type Conversation = {
   feedback_comment: string | null;
   category: string | null;
   sub_category: string | null;
+  ticket_id: string | null;
+  ticket_last_fetched_at: string | null;
 };
 
 type ConversationListProps = {
@@ -211,6 +213,11 @@ export default function ConversationList({
                     </span>
                     <span className="conversation-item-meta">
                       {formatRelativeTime(conv.updated_at)}
+                      {conv.ticket_id && conv.ticket_last_fetched_at && (
+                        <span className="conversation-item-ticket-fetched">
+                          {' · Fetched '}{formatRelativeTime(conv.ticket_last_fetched_at)}
+                        </span>
+                      )}
                     </span>
                   </button>
                   <div className="conversation-item-actions">

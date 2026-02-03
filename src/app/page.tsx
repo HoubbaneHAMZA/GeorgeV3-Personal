@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type CSSProperties } from 'react';
+import { Copy, Check, AlertCircle, SendHorizontal } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -349,6 +350,7 @@ export default function Home() {
   const sessionStorageKey = useMemo(() => `george:session:${pathname}`, [pathname]);
   const messagesStorageKey = useMemo(() => `george:messages:${pathname}`, [pathname]);
   const conversationIdStorageKey = useMemo(() => `george:conversationId:${pathname}`, [pathname]);
+  const firstTicketIdStorageKey = useMemo(() => `george:firstTicketId:${pathname}`, [pathname]);
   const streamingFlagKey = useMemo(() => `george:streaming:${pathname}`, [pathname]);
   const [input, setInput] = useState('');
   const [ticketError, setTicketError] = useState('');
@@ -370,6 +372,9 @@ export default function Home() {
   const [showFeedbackReminder, setShowFeedbackReminder] = useState(false);
   const [isFeedbackReminderClosing, setIsFeedbackReminderClosing] = useState(false);
   const feedbackReminderCloseTimeout = useRef<number | null>(null);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const [isCommandErrorClosing, setIsCommandErrorClosing] = useState(false);
+  const commandErrorCloseTimeout = useRef<number | null>(null);
   const [isZendeskNotFoundClosing, setIsZendeskNotFoundClosing] = useState(false);
   const [isAgentInterruptedClosing, setIsAgentInterruptedClosing] = useState(false);
   const [isAbortConfirmClosing, setIsAbortConfirmClosing] = useState(false);
@@ -404,7 +409,9 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [firstTicketId, setFirstTicketId] = useState<string | null>(null);
   const [cleanupComplete, setCleanupComplete] = useState(false);
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
 
   // Use SWR-cached conversations list
   const {
@@ -498,8 +505,33 @@ export default function Home() {
   );
   // Extract ticket number if input starts with # followed by numbers only (initial mode only).
   const ticketMatch = !isChatMode ? input.match(/^(#\d+)(.*)$/) : null;
-  const ticketTag = ticketMatch ? ticketMatch[1] : null;
-  const inputAfterTag = ticketMatch ? ticketMatch[2] : input;
+  // Only show blue tag span when user has started typing instruction (has content after the ticket number)
+  const ticketTag = ticketMatch && ticketMatch[2].length > 0 ? ticketMatch[1] : null;
+  // Extract command if input starts with / (chat mode only, for commands like /update)
+  const availableCommands = useMemo(() => [
+    { command: '/update', description: 'Refresh the current ticket data' }
+  ], []);
+  const commandMatch = isChatMode ? input.match(/^(\/\w*)(.*)$/) : null;
+  const commandTag = commandMatch ? commandMatch[1] : null;
+  const isValidCommand = commandTag ? availableCommands.some(cmd => cmd.command.startsWith(commandTag.toLowerCase())) : false;
+  const isCompleteCommand = commandTag ? availableCommands.some(cmd => cmd.command === commandTag.toLowerCase()) : false;
+  // Show full input when tag isn't displayed (ticketTag is null but ticketMatch exists means we're typing just the ticket number)
+  const inputAfterTag = ticketTag ? ticketMatch![2] : commandMatch ? commandMatch[2] : input;
+  const ticketInputStyle = ticketMatch && !ticketTag
+    ? ({ '--ticket-width': `calc(${Math.max(2, inputAfterTag.length || 1)}ch + 20px)` } as CSSProperties)
+    : undefined;
+  // Filter suggestions based on what's typed (show all if just "/" is typed)
+  const commandSuggestions = useMemo(() => {
+    if (!commandTag || isCompleteCommand) return [];
+    return availableCommands.filter(cmd =>
+      cmd.command.toLowerCase().startsWith(commandTag.toLowerCase())
+    );
+  }, [commandTag, isCompleteCommand, availableCommands]);
+  const [commandSuggestionIndex, setCommandSuggestionIndex] = useState(0);
+  // Reset suggestion index when suggestions change
+  useEffect(() => {
+    setCommandSuggestionIndex(0);
+  }, [commandSuggestions.length]);
   const formatSourceLabel = (url: string) => {
     try {
       const parsed = new URL(url);
@@ -1043,11 +1075,13 @@ export default function Home() {
     setMessages([]);
     setSessionId(null);
     setConversationId(null);
+    setFirstTicketId(null);
     traceBufferRef.current = {};
     try {
       localStorage.removeItem(sessionStorageKey);
       localStorage.removeItem(messagesStorageKey);
       localStorage.removeItem(conversationIdStorageKey);
+      localStorage.removeItem(firstTicketIdStorageKey);
     } catch {
       // Ignore storage failures (private mode, SSR).
     }
@@ -1076,12 +1110,14 @@ export default function Home() {
         localStorage.removeItem(sessionStorageKey);
         localStorage.removeItem(messagesStorageKey);
         localStorage.removeItem(conversationIdStorageKey);
+        localStorage.removeItem(firstTicketIdStorageKey);
         setSessionId(null);
         setConversationId(null);
+        setFirstTicketId(null);
         setMessages([]);
       }
     }
-  }, [conversations, conversationsLoading, sessionStorageKey, messagesStorageKey, conversationIdStorageKey]);
+  }, [conversations, conversationsLoading, sessionStorageKey, messagesStorageKey, conversationIdStorageKey, firstTicketIdStorageKey]);
 
   // Persist sidebar collapsed state to localStorage
   useEffect(() => {
@@ -1192,6 +1228,11 @@ export default function Home() {
     // Skip if already on this conversation
     if (conversationId === conversation.id) return;
 
+    // Set ticket_id immediately from conversation list data (most reliable source)
+    if (conversation.ticket_id) {
+      setFirstTicketId(`#${conversation.ticket_id}`);
+    }
+
     // Check SWR cache first for instant loading
     const cacheKey = `/api/conversations/${conversation.id}`;
     const cachedData = conversationCacheRef.current.get(conversation.id);
@@ -1205,6 +1246,16 @@ export default function Home() {
       setMessages(loadedMessages);
       setHasResponse(loadedMessages.length > 0);
       setStatusDone(true);
+      // If ticket_id not set from conversation list, try cached data or message parsing
+      if (!conversation.ticket_id) {
+        if (cachedData.conversation?.ticket_id) {
+          setFirstTicketId(`#${cachedData.conversation.ticket_id}`);
+        } else {
+          const firstUserMsg = loadedMessages.find((m) => m.role === 'user');
+          const ticketIdMatch = firstUserMsg?.content.match(/^Zendesk ticket (#\d+)/);
+          setFirstTicketId(ticketIdMatch ? ticketIdMatch[1] : null);
+        }
+      }
       return;
     }
 
@@ -1254,6 +1305,16 @@ export default function Home() {
         setHasResponse(loadedMessages.length > 0);
         setStatusDone(true);
         setIsLoadingConversation(false);
+        // If ticket_id not set from conversation list, try fetched data or message parsing
+        if (!conversation.ticket_id) {
+          if (data.conversation?.ticket_id) {
+            setFirstTicketId(`#${data.conversation.ticket_id}`);
+          } else {
+            const firstUserMsg = loadedMessages.find((m) => m.role === 'user');
+            const ticketIdMatch = firstUserMsg?.content.match(/^Zendesk ticket (#\d+)/);
+            setFirstTicketId(ticketIdMatch ? ticketIdMatch[1] : null);
+          }
+        }
       } else if (retries > 0) {
         // Retry on failure
         await new Promise((r) => setTimeout(r, 1000));
@@ -1291,7 +1352,9 @@ export default function Home() {
         feedback_rating: null,
         feedback_comment: null,
         category: null,
-        sub_category: null
+        sub_category: null,
+        ticket_id: null,
+        ticket_last_fetched_at: null
       });
     }
   }, [conversations, handleSelectConversation]);
@@ -1356,6 +1419,19 @@ export default function Home() {
     }
   }, [cleanupComplete, sessionStorageKey, sessionId]);
 
+  // Restore firstTicketId from localStorage
+  useEffect(() => {
+    if (!cleanupComplete) return;
+    try {
+      const stored = localStorage.getItem(firstTicketIdStorageKey);
+      if (stored && !firstTicketId) {
+        setFirstTicketId(stored);
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [cleanupComplete, firstTicketIdStorageKey, firstTicketId]);
+
   // Clean up orphaned data from interrupted requests (refresh/navigate during streaming)
   useEffect(() => {
     let didFullCleanup = false;
@@ -1391,6 +1467,7 @@ export default function Home() {
                 localStorage.removeItem(messagesStorageKey);
                 localStorage.removeItem(sessionStorageKey);
                 localStorage.removeItem(conversationIdStorageKey);
+                localStorage.removeItem(firstTicketIdStorageKey);
                 didFullCleanup = true;
               }
             } else if (isLastAssistantEmpty && parsedMessages.length === 1) {
@@ -1399,6 +1476,7 @@ export default function Home() {
               localStorage.removeItem(messagesStorageKey);
               localStorage.removeItem(sessionStorageKey);
               localStorage.removeItem(conversationIdStorageKey);
+              localStorage.removeItem(firstTicketIdStorageKey);
               didFullCleanup = true;
             }
             // If last message is not an empty assistant, don't modify anything
@@ -1407,6 +1485,7 @@ export default function Home() {
           // No messages stored but streaming flag was set - clear session data
           localStorage.removeItem(sessionStorageKey);
           localStorage.removeItem(conversationIdStorageKey);
+          localStorage.removeItem(firstTicketIdStorageKey);
           didFullCleanup = true;
         }
       }
@@ -1559,6 +1638,30 @@ export default function Home() {
       // Ignore storage failures.
     }
   }, [conversationId, conversationIdStorageKey]);
+
+  // Persist firstTicketId to localStorage
+  useEffect(() => {
+    try {
+      if (!firstTicketId) {
+        localStorage.removeItem(firstTicketIdStorageKey);
+        return;
+      }
+      localStorage.setItem(firstTicketIdStorageKey, firstTicketId);
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [firstTicketId, firstTicketIdStorageKey]);
+
+  // Extract firstTicketId from messages if not already set (handles restored/loaded conversations)
+  useEffect(() => {
+    if (firstTicketId || messages.length === 0) return;
+    const firstUserMsg = messages.find((m) => m.role === 'user');
+    if (!firstUserMsg) return;
+    const ticketIdMatch = firstUserMsg.content.match(/^Zendesk ticket (#\d+)/);
+    if (ticketIdMatch) {
+      setFirstTicketId(ticketIdMatch[1]);
+    }
+  }, [messages, firstTicketId]);
 
   useEffect(() => {
     try {
@@ -1751,6 +1854,7 @@ export default function Home() {
     setIsZendeskNotFoundClosing(false);
     setMessages([]);
     setSessionId(null);
+    setFirstTicketId(null);
     setHasResponse(false);
     setStatusSteps([]);
     setActiveStatusId(null);
@@ -1761,6 +1865,7 @@ export default function Home() {
       localStorage.removeItem(messagesStorageKey);
       localStorage.removeItem(sessionStorageKey);
       localStorage.removeItem(conversationIdStorageKey);
+      localStorage.removeItem(firstTicketIdStorageKey);
     } catch {
       // Ignore storage failures.
     }
@@ -1919,6 +2024,18 @@ export default function Home() {
       feedbackReminderCloseTimeout.current = null;
     }, 180);
   };
+  const closeCommandError = () => {
+    if (!commandError || isCommandErrorClosing) return;
+    setIsCommandErrorClosing(true);
+    if (commandErrorCloseTimeout.current) {
+      window.clearTimeout(commandErrorCloseTimeout.current);
+    }
+    commandErrorCloseTimeout.current = window.setTimeout(() => {
+      setCommandError(null);
+      setIsCommandErrorClosing(false);
+      commandErrorCloseTimeout.current = null;
+    }, 180);
+  };
   const closeFeedbackReminderAndOpenFeedback = () => {
     if (!showFeedbackReminder || isFeedbackReminderClosing) return;
     setIsFeedbackReminderClosing(true);
@@ -2050,6 +2167,9 @@ export default function Home() {
       if (feedbackReminderCloseTimeout.current) {
         window.clearTimeout(feedbackReminderCloseTimeout.current);
       }
+      if (commandErrorCloseTimeout.current) {
+        window.clearTimeout(commandErrorCloseTimeout.current);
+      }
       if (metaOverlayCloseTimeout.current) {
         window.clearTimeout(metaOverlayCloseTimeout.current);
       }
@@ -2083,8 +2203,37 @@ export default function Home() {
     }, 180);
   };
 
+  const handleCopyMessage = useCallback((content: string, index: number) => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedMessageIndex(index);
+      setTimeout(() => setCopiedMessageIndex(null), 2000);
+    });
+  }, []);
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    // Check for commands (input starting with /)
+    const trimmedInputForCommand = input.trim().toLowerCase();
+    const isCommandInput = trimmedInputForCommand.startsWith('/');
+    const validCommands = ['/update'];
+    const isValidCommandInput = isCommandInput && validCommands.includes(trimmedInputForCommand);
+
+    // Block invalid commands
+    if (isCommandInput && !isValidCommandInput) {
+      setCommandError(`Unknown command "${input.trim()}". Available commands: ${validCommands.join(', ')}`);
+      return;
+    }
+
+    // Check for /update command to refresh Zendesk ticket
+    const isUpdateCommand = trimmedInputForCommand === '/update';
+    if (isUpdateCommand) {
+      if (!firstTicketId) {
+        setCommandError('No ticket in this conversation to update. Start with a ticket number (e.g., #12345) first.');
+        return;
+      }
+    }
+
     const isChatRequest = isChatMode;
     runModeRef.current = isChatRequest ? 'chat' : 'initial';
     abortRequestedRef.current = false;
@@ -2133,19 +2282,37 @@ export default function Home() {
     } else {
       setMessages([]);
       setSessionId(null);
+      setFirstTicketId(null);
       setSteps({ started: true });
       setIsChatOverlayVisible(false);
     }
 
-    // Auto-detect ticket ID if input starts with #
+    // Auto-detect ticket ID if input starts with #, or handle /update command
     const canUseTicketMode = !isChatRequest;
     const trimmedInput = input.trim();
-    const detectedIsZendeskTicket = canUseTicketMode && trimmedInput.startsWith('#');
-    const cleanInput = detectedIsZendeskTicket ? trimmedInput.replace(/^#/, '') : trimmedInput;
-    const userLabel = detectedIsZendeskTicket ? `Zendesk ticket #${cleanInput}` : trimmedInput;
+    // For /update command in chat mode, use the stored firstTicketId
+    const isTicketRefresh = Boolean(isUpdateCommand && isChatRequest && firstTicketId);
+    // Parse ticket ID and optional instruction (e.g., "#12345 summarize the issue")
+    const ticketInputMatch = canUseTicketMode ? trimmedInput.match(/^#(\d+)(.*)$/) : null;
+    const ticketIdOnly = ticketInputMatch ? ticketInputMatch[1] : null;
+    const ticketInstruction = ticketInputMatch ? ticketInputMatch[2].trim() : '';
+    const detectedIsZendeskTicket = (canUseTicketMode && ticketIdOnly !== null) || isTicketRefresh;
+    // For /update, use the stored ticket ID; otherwise use the parsed ticket ID or the full input
+    const cleanInput = isTicketRefresh
+      ? firstTicketId!.replace(/^#/, '')
+      : ticketIdOnly !== null
+        ? ticketIdOnly
+        : trimmedInput;
+    const userLabel = isTicketRefresh
+      ? `Refreshing ticket #${cleanInput}...`
+      : ticketIdOnly !== null
+        ? ticketInstruction
+          ? `Zendesk ticket #${ticketIdOnly}: ${ticketInstruction}`
+          : `Zendesk ticket #${ticketIdOnly}`
+        : trimmedInput;
     const fallbackLabel = attachments.length > 0 ? 'Sent an attachment.' : '';
     const messageLabel = userLabel || fallbackLabel;
-    if (!messageLabel && isChatRequest) {
+    if (!messageLabel && isChatRequest && !isTicketRefresh) {
       setLoading(false);
       setIsChatOverlayVisible(false);
       try {
@@ -2155,7 +2322,7 @@ export default function Home() {
       }
       return;
     }
-    const shouldDeferMessages = detectedIsZendeskTicket && !isChatRequest;
+    const shouldDeferMessages = (detectedIsZendeskTicket && !isChatRequest) || isTicketRefresh;
     if (!shouldDeferMessages) {
       if (isChatRequest) {
         setMessages((prev) => [
@@ -2188,8 +2355,10 @@ export default function Home() {
         router.replace('/login');
         return;
       }
-      if (!isChatRequest && detectedIsZendeskTicket) {
-        setStatusSteps([{ id: 'fetch_ticket', label: 'Fetching Zendesk ticket' }]);
+      // Handle initial ticket fetch OR /update command refresh
+      if ((!isChatRequest && detectedIsZendeskTicket) || isTicketRefresh) {
+        const isRefresh = Boolean(isTicketRefresh);
+        setStatusSteps([{ id: 'fetch_ticket', label: isRefresh ? 'Refreshing Zendesk ticket' : 'Fetching Zendesk ticket' }]);
         setActiveStatusId('fetch_ticket');
         const ticketResponse = await fetch(ticketFetchEndpoint, {
           method: 'POST',
@@ -2258,11 +2427,24 @@ export default function Home() {
           };
         }
         agentInputPayload = ticketOutput;
+        // Store the ticket ID for future /update commands (only on initial fetch)
+        if (!isRefresh) {
+          setFirstTicketId(`#${cleanInput}`);
+        }
         if (shouldDeferMessages) {
-          setMessages([
-            createUserMessage(messageLabel),
-            createAssistantMessage('')
-          ]);
+          if (isRefresh) {
+            // For refresh, add a user message showing the refresh action
+            setMessages((prev) => [
+              ...prev,
+              createUserMessage(messageLabel),
+              createAssistantMessage('')
+            ]);
+          } else {
+            setMessages([
+              createUserMessage(messageLabel),
+              createAssistantMessage('')
+            ]);
+          }
         }
         setStatusSteps((prev) => {
           const exists = prev.some((step) => step.id === 'start');
@@ -2400,12 +2582,19 @@ export default function Home() {
           Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          input: cleanInput,
+          input: isTicketRefresh
+            ? `The Zendesk ticket #${cleanInput} has been refreshed with the latest data. Please acknowledge the updated ticket information and continue assisting with the ticket.`
+            : ticketIdOnly !== null
+              ? ticketInstruction
+                ? `Zendesk ticket #${ticketIdOnly}. User instruction: ${ticketInstruction}`
+                : `Zendesk ticket #${ticketIdOnly}`
+              : cleanInput,
           isZendeskTicket: detectedIsZendeskTicket,
           agentInput: agentInputPayload ?? undefined,
           sessionId: sessionId || undefined,
           conversationId: conversationId || undefined,
-          attachments: isChatRequest
+          refreshTicket: isTicketRefresh || undefined,
+          attachments: isChatRequest && !isTicketRefresh
             ? attachments.map((attachment) => attachment.dataUrl)
             : undefined
         }),
@@ -3152,13 +3341,19 @@ export default function Home() {
                   {ticketTag && (
                     <span className="george-ticket-tag">{ticketTag}</span>
                   )}
-                  <div style={{ position: 'relative', flex: 1 }}>
+                  <div style={{ position: 'relative', flex: ticketMatch && !ticketTag ? '0 0 auto' : 1 }}>
                     <input
                       type="text"
-                      className="george-input"
+                      className={`george-input${ticketMatch && !ticketTag ? ' george-input-as-tag' : ''}`}
                       placeholder={ticketTag ? "" : "Ask a question or enter #ticket_id"}
+                      style={ticketInputStyle}
                       value={inputAfterTag}
                       onKeyDown={(event) => {
+                        // When input looks like a tag (ticketMatch but no ticketTag), handle backspace to delete from the ticket number
+                        if (event.key === 'Backspace' && ticketMatch && !ticketTag && inputAfterTag.length > 0) {
+                          // Allow normal backspace behavior in the styled input
+                          return;
+                        }
                         if (event.key === 'Backspace' && ticketTag && inputAfterTag.length === 0) {
                           const nextTag = ticketTag.length > 2 ? ticketTag.slice(0, -1) : '';
                           setInput(nextTag);
@@ -3167,18 +3362,11 @@ export default function Home() {
                       }}
                       onChange={(event) => {
                         const newValue = event.target.value;
-                        
-                        // If we have a ticket tag, keep it and append what the user types.
+                        setTicketError('');
+                        // If we have a ticket tag, keep it and append what the user types (including instructions).
                         if (ticketTag) {
-                          if (newValue !== '' && !/^\d+$/.test(newValue)) {
-                            setTicketError('Delete the ticket tag to type a message.');
-                            setInput(ticketTag);
-                            return;
-                          }
-                          setTicketError('');
                           setInput(ticketTag + newValue);
                         } else {
-                          setTicketError('');
                           setInput(newValue);
                         }
                       }}
@@ -3272,13 +3460,11 @@ export default function Home() {
                   </div>
                 </div>
                 <button type="submit" className="george-input-send" disabled={loading} aria-label="Send">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 10L18 2L12 18L10 10L2 10Z" fill="currentColor"/>
-                  </svg>
+                  <SendHorizontal size={20} aria-hidden="true" />
                 </button>
                 </form>
               </div>
-              {!isTicketMode ? (
+              {!isTicketMode && !ticketMatch ? (
                 <div className="george-inline-fields">
                   <div className="george-inline-field">
                     {userEmailTag ? (
@@ -3859,10 +4045,24 @@ export default function Home() {
                       </div>
                       <div className="george-chat-bubble">
                         {message.role === 'assistant' ? (
-                          <div
-                            className="markdown"
-                            dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(message.content) }}
-                          />
+                          <div className="george-assistant-content">
+                            <div
+                              className="markdown"
+                              dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(message.content) }}
+                            />
+                            <button
+                              type="button"
+                              className="george-copy-btn"
+                              onClick={() => handleCopyMessage(message.content, index)}
+                              aria-label="Copy message"
+                            >
+                              {copiedMessageIndex === index ? (
+                                <Check size={16} strokeWidth={2} />
+                              ) : (
+                                <Copy size={16} strokeWidth={2} />
+                              )}
+                            </button>
+                          </div>
                         ) : (
                           <div
                             className="george-chat-text"
@@ -3874,7 +4074,7 @@ export default function Home() {
                       </div>
                       {hasMetaRow ? (
                         <div className="george-chat-meta">
-                          {hasSources ? (
+                          {/* {hasSources ? (
                             <button
                               type="button"
                               className="george-trace-toggle"
@@ -3882,8 +4082,10 @@ export default function Home() {
                             >
                               Sources
                             </button>
-                          ) : <span />}
+                          ) : <span />} */}
                           {message.feedbackReady ? (
+                            <span className="george-feedback-wrapper">
+                            <span className="george-rate-label">Rate this response :  </span>
                             <FeedbackButtons
                               interactionId={message.interactionId ?? null}
                               currentRating={message.feedbackRating}
@@ -3911,6 +4113,7 @@ export default function Home() {
                                 });
                               }}
                             />
+                            </span>
                           ) : null}
                           {hasTrace ? (
                             <button
@@ -3918,7 +4121,7 @@ export default function Home() {
                               className="george-trace-toggle"
                               onClick={(event) => toggleMessageTrace(index, event.currentTarget)}
                             >
-                              Trace · {typeof message.timing?.server_ms === 'number' ? `${(message.timing.server_ms / 1000).toFixed(2)}s` : 'n/a'}
+                              Reasoning steps · {typeof message.timing?.server_ms === 'number' ? `${(message.timing.server_ms / 1000).toFixed(2)}s` : 'n/a'}
                             </button>
                           ) : <span />}
                         </div>
@@ -3969,17 +4172,78 @@ export default function Home() {
                     onDragLeave={handleAttachmentDragLeave}
                     onDrop={handleAttachmentDrop}
                   >
-                    <div className="george-input-wrapper">
+                    <div className="george-input-wrapper" style={{ position: 'relative' }}>
+                      {commandTag && (
+                        <span className={`george-command-tag${isCompleteCommand ? ' is-valid' : isValidCommand ? ' is-partial' : ' is-invalid'}`}>
+                          {commandTag}
+                        </span>
+                      )}
                       <input
                         type="text"
                         className="george-input"
-                        placeholder="Send a message"
-                        value={input}
+                        placeholder={commandTag ? "" : "Send a message or type /update"}
+                        value={inputAfterTag}
+                        onKeyDown={(event) => {
+                          // Handle command suggestions navigation
+                          if (commandSuggestions.length > 0) {
+                            if (event.key === 'ArrowDown') {
+                              event.preventDefault();
+                              setCommandSuggestionIndex(prev =>
+                                prev < commandSuggestions.length - 1 ? prev + 1 : 0
+                              );
+                              return;
+                            }
+                            if (event.key === 'ArrowUp') {
+                              event.preventDefault();
+                              setCommandSuggestionIndex(prev =>
+                                prev > 0 ? prev - 1 : commandSuggestions.length - 1
+                              );
+                              return;
+                            }
+                            if (event.key === 'Tab' || event.key === 'Enter') {
+                              event.preventDefault();
+                              const selected = commandSuggestions[commandSuggestionIndex];
+                              if (selected) {
+                                setInput(selected.command);
+                              }
+                              return;
+                            }
+                            if (event.key === 'Escape') {
+                              setInput('');
+                              return;
+                            }
+                          }
+                          if (event.key === 'Backspace' && commandTag && inputAfterTag.length === 0) {
+                            const nextCmd = commandTag.length > 1 ? commandTag.slice(0, -1) : '';
+                            setInput(nextCmd);
+                          }
+                        }}
                         onChange={(event) => {
-                          setInput(event.target.value);
+                          const newValue = event.target.value;
+                          if (commandTag) {
+                            setInput(commandTag + newValue);
+                          } else {
+                            setInput(newValue);
+                          }
                         }}
                         disabled={loading}
                       />
+                      {commandSuggestions.length > 0 && (
+                        <div className="george-command-suggestions">
+                          {commandSuggestions.map((cmd, index) => (
+                            <button
+                              key={cmd.command}
+                              type="button"
+                              className={`george-command-suggestion${index === commandSuggestionIndex ? ' is-selected' : ''}`}
+                              onClick={() => setInput(cmd.command)}
+                              onMouseEnter={() => setCommandSuggestionIndex(index)}
+                            >
+                              <span className="george-command-suggestion-cmd">{cmd.command}</span>
+                              <span className="george-command-suggestion-desc">{cmd.description}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <input
                       ref={fileInputRef}
@@ -4005,9 +4269,7 @@ export default function Home() {
                       <span aria-hidden="true">+</span>
                     </button>
                     <button type="submit" className="george-input-send" disabled={loading} aria-label="Send">
-                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M2 10L18 2L12 18L10 10L2 10Z" fill="currentColor"/>
-                      </svg>
+                      <SendHorizontal size={20} aria-hidden="true" />
                     </button>
                   </form>
                 </div>
@@ -4182,7 +4444,7 @@ export default function Home() {
 
                 return (
                   <>
-                    <div className="george-meta-title">Trace</div>
+                    <div className="george-meta-title">Reasoning steps</div>
                     {traceQueries.length > 0 ? (
                       <div className="george-trace-section">
                         <div className="george-trace-title">
@@ -4480,7 +4742,7 @@ export default function Home() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="george-confirm-title">
-              {currentConversation?.feedback_rating ? 'Is your feedback still accurate?' : 'Rate this conversation'}
+              {currentConversation?.feedback_rating ? 'Is your feedback still accurate?' : 'Rate this chat'}
             </div>
             <div className="george-confirm-body">
               {currentConversation?.feedback_rating ? (
@@ -4495,6 +4757,30 @@ export default function Home() {
               </button>
               <button type="button" className="george-confirm-accept" onClick={closeFeedbackReminderAndOpenFeedback}>
                 {currentConversation?.feedback_rating ? 'Update Feedback' : 'Rate Now'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
+
+      {commandError ? createPortal(
+        <div
+          className={`george-confirm-overlay${isCommandErrorClosing ? ' is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          onClick={closeCommandError}
+        >
+          <div
+            className={`george-confirm-modal${isCommandErrorClosing ? ' is-closing' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="george-confirm-icon"><AlertCircle /></div>
+            <div className="george-confirm-title">Command Error</div>
+            <div className="george-confirm-body">{commandError}</div>
+            <div className="george-confirm-actions">
+              <button type="button" className="george-confirm-accept" onClick={closeCommandError}>
+                OK
               </button>
             </div>
           </div>

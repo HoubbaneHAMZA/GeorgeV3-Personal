@@ -88,7 +88,7 @@ export default function ConversationFeedback({
         onClick={() => setIsOpen(true)}
       >
         <MessageSquare size={16} />
-        <span>{hasExistingFeedback ? 'Update Feedback' : 'Rate this conversation'}</span>
+        <span>{hasExistingFeedback ? 'Update Feedback' : 'Rate this chat'}</span>
       </button>
 
       {isOpen ? createPortal(

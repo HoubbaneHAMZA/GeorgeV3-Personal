@@ -3679,6 +3679,98 @@ html, body {
   flex-shrink: 0;
 }
 
+/* Style the input field to look like a blue tag while typing just the ticket number */
+.george-input-as-tag {
+  background: #2563eb !important;
+  color: white !important;
+  padding: 4px 10px !important;
+  border-radius: 999px !important;
+  font-weight: 500;
+  width: var(--ticket-width, auto) !important;
+  min-width: 2ch;
+  flex: 0 0 auto !important;
+}
+
+.george-input-as-tag::placeholder {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.george-command-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: 'Geist Mono', 'Geist Mono Fallback', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.george-command-tag.is-valid {
+  background: #16a34a;
+  color: white;
+}
+
+.george-command-tag.is-partial {
+  background: #ca8a04;
+  color: white;
+}
+
+.george-command-tag.is-invalid {
+  background: #6b7280;
+  color: white;
+}
+
+.george-command-suggestions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  z-index: 100;
+}
+
+.george-command-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.1s ease;
+}
+
+.george-command-suggestion:hover,
+.george-command-suggestion.is-selected {
+  background: var(--hover);
+}
+
+.george-command-suggestion-cmd {
+  font-family: 'Geist Mono', 'Geist Mono Fallback', monospace;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+.george-command-suggestion-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .george-input {
   flex: 1;
   border: none;
@@ -3862,7 +3954,7 @@ html, body {
 .george-tip-stack {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
 }
 
 .george-tip-label {
@@ -4359,6 +4451,40 @@ html, body {
   padding-left: 22px;
 }
 
+.george-assistant-content {
+  position: relative;
+}
+
+.george-copy-btn {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.george-assistant-content:hover .george-copy-btn {
+  opacity: 1;
+}
+
+.george-copy-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.george-copy-btn:active {
+  background: #e5e7eb;
+}
+
 .george-chat-meta {
   position: static;
   display: flex;
@@ -4366,17 +4492,28 @@ html, body {
   align-items: center;
   gap: 12px;
   margin-top: 10px;
-  padding: 0 6px;
+  padding: 0;
 }
 
 .george-chat-message.is-assistant .george-chat-meta {
-  margin-left: 44px;
+  margin-left: 0;
 }
 
 .george-chat-message.is-user .george-chat-meta {
   margin-right: 44px;
 }
 
+.george-feedback-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.george-rate-label {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
 
 .george-meta-overlay {
   position: fixed;
@@ -4549,6 +4686,16 @@ html, body {
 
 .george-confirm-accept:hover {
   background: rgba(214, 71, 71, 0.08);
+}
+
+.george-confirm-icon {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+}
+
+.george-confirm-icon svg {
+  width: 2.5rem;
+  height: 2.5rem;
 }
 
 .george-docs-overlay {
@@ -5708,6 +5855,7 @@ html, body {
   display: flex;
   flex-direction: row;
   align-items: center;
+  margin-left: 6px;
 }
 
 .george-feedback-overlay {
@@ -7736,6 +7884,11 @@ html, body {
 .conversation-item-meta {
   font-size: 0.75rem;
   color: var(--muted);
+}
+
+.conversation-item-ticket-fetched {
+  color: var(--muted);
+  opacity: 0.8;
 }
 
 .conversation-item-actions {

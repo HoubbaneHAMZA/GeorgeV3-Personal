@@ -21,6 +21,8 @@ export type CachedConversation = {
     id: string;
     session_id: string;
     title: string | null;
+    ticket_id: string | null;
+    ticket_last_fetched_at: string | null;
   };
   messages: CachedConversationMessage[];
 };
