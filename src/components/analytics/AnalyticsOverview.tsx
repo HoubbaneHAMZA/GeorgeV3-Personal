@@ -189,7 +189,7 @@ export default function AnalyticsOverview({ data, isLoading, error, view = 'mess
   }
 
   const satisfactionRate = messageData.feedback_count > 0
-    ? (messageData.good_rate ?? 0) + (messageData.perfect_rate ?? 0)
+    ? (messageData.good_rate ?? 0) + (messageData.perfect_rate ?? 0) + (messageData.usable_rate ?? 0)
     : 0;
 
   const cards = [
@@ -215,7 +215,7 @@ export default function AnalyticsOverview({ data, isLoading, error, view = 'mess
       icon: ThumbsUp,
       label: 'Satisfaction',
       value: `${satisfactionRate.toFixed(1)}%`,
-      subtext: 'good + perfect'
+      subtext: 'good + perfect + usable'
     },
     {
       icon: Clock,
