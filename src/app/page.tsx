@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type CSSProperties } from 'react';
+  import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Copy, Check, AlertCircle, SendHorizontal } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
@@ -504,9 +504,9 @@ export default function Home() {
     [messages]
   );
   // Extract ticket number if input starts with # followed by numbers only (initial mode only).
-  const ticketMatch = !isChatMode ? input.match(/^(#\d+)(.*)$/) : null;
-  // Only show blue tag span when user has started typing instruction (has content after the ticket number)
-  const ticketTag = ticketMatch && ticketMatch[2].length > 0 ? ticketMatch[1] : null;
+  const ticketMatch = !isChatMode ? input.match(/^(#\d+)([\s\S]*)$/) : null;
+  // Always show the blue tag for the ticket number when present.
+  const ticketTag = ticketMatch ? ticketMatch[1] : null;
   // Extract command if input starts with / (chat mode only, for commands like /update)
   const availableCommands = useMemo(() => [
     { command: '/update', description: 'Refresh the current ticket data' }
@@ -517,9 +517,6 @@ export default function Home() {
   const isCompleteCommand = commandTag ? availableCommands.some(cmd => cmd.command === commandTag.toLowerCase()) : false;
   // Show full input when tag isn't displayed (ticketTag is null but ticketMatch exists means we're typing just the ticket number)
   const inputAfterTag = ticketTag ? ticketMatch![2] : commandMatch ? commandMatch[2] : input;
-  const ticketInputStyle = ticketMatch && !ticketTag
-    ? ({ '--ticket-width': `calc(${Math.max(2, inputAfterTag.length || 1)}ch + 20px)` } as CSSProperties)
-    : undefined;
   // Filter suggestions based on what's typed (show all if just "/" is typed)
   const commandSuggestions = useMemo(() => {
     if (!commandTag || isCompleteCommand) return [];
@@ -2424,6 +2421,9 @@ export default function Home() {
           }
           if (eventType === 'done') {
             ticketFinalEvent = (data?.output as AgentInputPayload) || null;
+            console.log('[ticket-fetch] done event output:', ticketFinalEvent ?
+              `metadata: ${!!ticketFinalEvent.metadata}, conversation: ${Array.isArray(ticketFinalEvent.conversation) ? ticketFinalEvent.conversation.length : 'not array'}` :
+              'null');
             return;
           }
           if (eventType === 'error') {
@@ -2462,6 +2462,7 @@ export default function Home() {
           };
         }
         agentInputPayload = ticketOutput;
+        console.log('[ticket-fetch] agentInputPayload set:', agentInputPayload ? 'yes' : 'no');
         // Store the ticket ID for future /update commands (only on initial fetch)
         if (!isRefresh) {
           setFirstTicketId(`#${cleanInput}`);
@@ -2748,8 +2749,10 @@ export default function Home() {
             const total = typeof eventData.total === 'number' ? eventData.total : 0;
             const cached = typeof eventData.cached === 'number' ? eventData.cached : 0;
             const analyzed = typeof eventData.analyzed === 'number' ? eventData.analyzed : 0;
-            console.log('[attachments][analysis]', { total, cached, analyzed, eventData });
-            if (total > 0) {
+            const failed = typeof eventData.failed === 'number' ? eventData.failed : 0;
+            console.log('[attachments][analysis]', { total, cached, analyzed, failed, eventData });
+            // Update steps even if total is 0 but there were failures (to show error state)
+            if (total > 0 || failed > 0) {
               setSteps((prev) => {
                 const existing = prev.attachments || { total: 0, cached: 0, analyzed: 0 };
                 return {
@@ -3376,11 +3379,10 @@ export default function Home() {
                   {ticketTag && (
                     <span className="george-ticket-tag">{ticketTag}</span>
                   )}
-                  <div style={{ position: 'relative', flex: ticketMatch && !ticketTag ? '0 0 auto' : 1 }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
                     <textarea
-                      className={`george-input${ticketMatch && !ticketTag ? ' george-input-as-tag' : ''}`}
+                      className="george-input"
                       placeholder={ticketTag ? "" : "Ask a question or enter #ticket_id"}
-                      style={ticketInputStyle}
                       value={inputAfterTag}
                       rows={1}
                       onKeyDown={(event) => {
@@ -3389,11 +3391,6 @@ export default function Home() {
                           event.preventDefault();
                           const form = event.currentTarget.closest('form');
                           if (form) form.requestSubmit();
-                          return;
-                        }
-                        // When input looks like a tag (ticketMatch but no ticketTag), handle backspace to delete from the ticket number
-                        if (event.key === 'Backspace' && ticketMatch && !ticketTag && inputAfterTag.length > 0) {
-                          // Allow normal backspace behavior in the styled input
                           return;
                         }
                         if (event.key === 'Backspace' && ticketTag && inputAfterTag.length === 0) {
