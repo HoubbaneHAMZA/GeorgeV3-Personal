@@ -23,6 +23,7 @@ const GOOD_ONLY_TAGS = [
   "Tone wasn't right",
   'The answer is too short',
   'The answer is too long',
+  'Undocumented',
 ];
 
 export default function FeedbackPopover({
