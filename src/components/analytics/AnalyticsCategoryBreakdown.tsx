@@ -44,8 +44,8 @@ function calculateSatisfactionScore(data: CategoryData): number {
   if (data.count === 0) return 0;
 
   if (isMessageCategory(data)) {
-    // Message view: (perfect + good) / total
-    return ((data.perfect + data.good) / data.count) * 100;
+    // Message view: (perfect + good + usable) / total
+    return ((data.perfect + data.good + data.usable) / data.count) * 100;
   } else {
     // Conversation view: (solved + partially_solved) / total
     return ((data.solved + data.partially_solved) / data.count) * 100;
@@ -264,7 +264,7 @@ export default function AnalyticsCategoryBreakdown({
         <div className="george-analytics-category-legend">
           <span className="george-analytics-legend-label">Satisfaction Score</span>
           <span className="george-analytics-legend-desc">
-            = {view === 'message' ? 'Perfect + Good' : 'Solved + Partially Solved'} ratings
+            = {view === 'message' ? 'Perfect + Good + Usable' : 'Solved + Partially Solved'} ratings
           </span>
           <span className="george-analytics-legend-item">
             <span className="george-analytics-legend-dot george-analytics-legend-dot-high" />
