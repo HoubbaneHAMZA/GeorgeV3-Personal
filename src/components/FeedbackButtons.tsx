@@ -34,12 +34,13 @@ const ratingConfig: Array<{
   value: FeedbackRating;
   Icon: typeof Frown;
   label: string;
+  description: string;
 }> = [
-  { value: 'unusable', Icon: Angry, label: 'Unusable' },
-  { value: 'problematic', Icon: Frown, label: 'Problematic' },
-  { value: 'usable', Icon: Meh, label: 'Usable' },
-  { value: 'good', Icon: Smile, label: 'Good' },
-  { value: 'perfect', Icon: Laugh, label: 'Perfect' },
+  { value: 'unusable', Icon: Angry, label: 'Unusable', description: 'complete rewrite required, incorrect information' },
+  { value: 'problematic', Icon: Frown, label: 'Problematic', description: 'significant rewriting needed, some info incorrect' },
+  { value: 'usable', Icon: Meh, label: 'Usable', description: 'moderate changes needed but core information present' },
+  { value: 'good', Icon: Smile, label: 'Good', description: 'minor adjustments to tone/wording but content correct' },
+  { value: 'perfect', Icon: Laugh, label: 'Perfect', description: 'used as-is or minimal formatting adjustments' },
 ];
 
 export default function FeedbackButtons({
@@ -51,6 +52,7 @@ export default function FeedbackButtons({
 }: FeedbackButtonsProps) {
   const [selectedRating, setSelectedRating] = useState<FeedbackRating | null>(currentRating ?? null);
   const [popoverRating, setPopoverRating] = useState<FeedbackRating | null>(null);
+  const [tooltipState, setTooltipState] = useState<{ rating: FeedbackRating; top: number; left: number } | null>(null);
 
   // Sync selectedRating when currentRating prop changes (e.g., when loading a conversation)
   useEffect(() => {
@@ -79,6 +81,7 @@ export default function FeedbackButtons({
 
   const handleRatingClick = (rating: FeedbackRating) => {
     if (!interactionId) return;
+    setTooltipState(null);
     // Capture button position BEFORE setting popoverRating (which hides the button)
     const btn = buttonRefs.current[rating];
     if (btn) {
@@ -110,6 +113,20 @@ export default function FeedbackButtons({
       setPopoverPosition({ buttonTop, buttonLeft, buttonRight, popoverTop, openDirection, maxHeight });
       setPopoverRating(rating);
     }
+  };
+
+  const showTooltip = (rating: FeedbackRating) => {
+    if (popoverRating) return;
+    const btn = buttonRefs.current[rating];
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const left = rect.left + rect.width / 2;
+    const top = rect.bottom + 8;
+    setTooltipState({ rating, top, left });
+  };
+
+  const hideTooltip = () => {
+    setTooltipState(null);
   };
 
   // Helper to animate close, then execute callback
@@ -208,6 +225,7 @@ export default function FeedbackButtons({
   }, []);
 
   const activeConfig = popoverRating ? ratingConfig.find(r => r.value === popoverRating) : null;
+  const tooltipConfig = tooltipState ? ratingConfig.find(r => r.value === tooltipState.rating) : null;
 
   return (
     <div className="george-feedback">
@@ -250,8 +268,19 @@ export default function FeedbackButtons({
         </>,
         document.body
       )}
+      {tooltipState && tooltipConfig && mounted && popoverRating === null && createPortal(
+        <div
+          className="george-feedback-tooltip george-feedback-tooltip-portal"
+          style={{ top: tooltipState.top, left: tooltipState.left }}
+          role="tooltip"
+        >
+          <span className="george-feedback-tooltip-title">{tooltipConfig.label}</span>
+          <span className="george-feedback-tooltip-desc">{tooltipConfig.description}</span>
+        </div>,
+        document.body
+      )}
       <div className="george-feedback-buttons">
-        {ratingConfig.map(({ value, Icon, label }) => {
+        {ratingConfig.map(({ value, Icon, label, description }) => {
           const isSelected = selectedRating === value;
           const isDisabled = selectedRating !== null && selectedRating !== value;
           const isHidden = popoverRating === value;
@@ -263,6 +292,10 @@ export default function FeedbackButtons({
                 type="button"
                 className={`george-feedback-btn${isSelected ? ' is-selected' : ''}${isDisabled ? ' is-disabled' : ''}${isHidden ? ' is-hidden' : ''}`}
                 onClick={() => handleRatingClick(value)}
+                onMouseEnter={() => showTooltip(value)}
+                onMouseLeave={hideTooltip}
+                onFocus={() => showTooltip(value)}
+                onBlur={hideTooltip}
                 disabled={!interactionId || isSubmitting}
                 aria-label={label}
                 aria-pressed={isSelected}
@@ -272,7 +305,6 @@ export default function FeedbackButtons({
                   strokeWidth={isSelected ? 2.5 : 1.5}
                 />
               </button>
-              <span className="george-feedback-tooltip" role="tooltip">{label}</span>
             </div>
           );
         })}

@@ -5938,11 +5938,12 @@ html, body {
 
 .george-feedback-btn-wrapper {
   position: relative;
+  z-index: 0;
 }
 
 .george-feedback-btn-wrapper:hover,
 .george-feedback-btn-wrapper:focus-within {
-  z-index: 100;
+  z-index: 2000;
 }
 
 .george-feedback-tooltip {
@@ -5953,15 +5954,39 @@ html, body {
   background: var(--page-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 0.7rem;
+  padding: 6px 10px;
+  font-size: 0.72rem;
   color: var(--text);
-  white-space: nowrap;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.25;
+  min-width: 200px;
+  max-width: 260px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 100;
+  z-index: 2000;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.george-feedback-tooltip-portal {
+  position: fixed;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: none;
+  z-index: 5000;
+}
+
+.george-feedback-tooltip-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.george-feedback-tooltip-desc {
+  color: var(--text-secondary);
 }
 
 .george-feedback-btn-wrapper:hover .george-feedback-tooltip,
