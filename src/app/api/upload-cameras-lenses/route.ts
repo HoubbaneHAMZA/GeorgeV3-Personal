@@ -174,6 +174,7 @@ export async function POST(request: NextRequest) {
       SELECT
         "Brand",
         "Model",
+        "Sensor",
         "Mount",
         "Calibration type",
         "Customer status",
