@@ -55,9 +55,9 @@ function mapStatus(value: unknown): string {
 
   const str = String(value).trim();
 
-  // Check marks (various unicode variants)
+  // Check marks (various unicode variants) - means compatible with BOTH Bayer and X-Trans
   if (str === '✓' || str === '✔' || str === '✅' || str.toLowerCase() === 'yes') {
-    return 'compatible';
+    return 'compatible: Bayer + X-Trans';
   }
 
   // X marks (various unicode variants)
@@ -70,7 +70,20 @@ function mapStatus(value: unknown): string {
     return 'not compatible';
   }
 
-  // Keep text values as-is (like "X-Trans", "Bayer", etc.)
+  // Sensor-specific compatibility with fuzzy matching
+  const lowerStr = str.toLowerCase().replace(/[\s\-_]/g, ''); // normalize: remove spaces, hyphens, underscores
+
+  // X-Trans variations: "X-Trans", "XTrans", "X Trans", "x-trans", "xtrans", "X_Trans", etc.
+  if (lowerStr.includes('xtrans') || lowerStr.includes('xtrns') || /^x[\s\-_]?trans$/i.test(str)) {
+    return 'compatible: X-Trans only';
+  }
+
+  // Bayer variations: "Bayer", "bayer", "BAYER", "Baer" (typo), etc.
+  if (lowerStr.includes('bayer') || lowerStr === 'baer' || lowerStr === 'baeyr') {
+    return 'compatible: Bayer only';
+  }
+
+  // Keep other text values as-is
   return str;
 }
 
